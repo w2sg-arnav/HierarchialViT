@@ -1,447 +1,305 @@
+# phase4_finetuning/main.py
+from collections import OrderedDict 
 import os
 import logging
 import torch
 import torch.nn as nn
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
-from torch.cuda.amp import GradScaler, autocast
+from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau, LinearLR, SequentialLR
-from tqdm import tqdm
-from collections import Counter
 import argparse
 import yaml
-import torchvision
-import torchvision.transforms as T
-from PIL import Image
-from sklearn.metrics import accuracy_score, f1_score
+import torch.nn.functional as F 
+import math 
 
-# Configuration Management
-DEFAULT_CONFIG = {
-    "seed": 42,
-    "data_root": "/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection",
-    "img_size": (256, 256),
-    "num_classes": 7,
-    "train_split": 0.8,
-    "finetune_batch_size": 8,
-    "accumulation_steps": 4,
-    "initial_learning_rate": 3e-4,  # Increased from 1e-4
-    "weight_decay": 0.01,
-    "warmup_epochs": 2,  # Reduced from 5
-    "t_0": 15,
-    "t_mult": 1,
-    "eta_min": 1e-6,
-    "reduce_lr_factor": 0.5,
-    "reduce_lr_patience": 10,
-    "patience": 30,
-    "label_smoothing": 0.1,
-    "clip_grad_norm": 5.0,  # Increased from 1.0
-    "amp_enabled": False,
-    "augmentations_enabled": True,
-    "pretrained": True,
-    "best_model_path": "best_hvt.pth",
-    "embed_dim": 128,
-    "num_heads": 4,
-    "log_interval": 50
-}
+# --- Path Setup ---
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(current_dir) 
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+    print(f"DEBUG: Added project root to sys.path: {project_root}")
 
-def load_config(config_path=None):
-    config = DEFAULT_CONFIG.copy()
-    if config_path:
+# --- Project Imports ---
+from phase4_finetuning.config import config as default_config 
+from phase4_finetuning.dataset import SARCLD2024Dataset
+from phase4_finetuning.utils.augmentations import FinetuneAugmentation
+from phase4_finetuning.utils.logging_setup import setup_logging
+from phase4_finetuning.finetune.trainer import Finetuner
+from phase2_model.models.hvt import DiseaseAwareHVT 
+
+# --- Helper Functions --- 
+def load_config_yaml(config_path=None):
+    # (Keep as is)
+    config = default_config.copy() 
+    if config_path and os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
-                config.update(yaml.safe_load(f))
-        except FileNotFoundError:
-            logging.warning(f"Config file not found at {config_path}. Using default settings.")
+                yaml_config = yaml.safe_load(f)
+                if yaml_config: config.update(yaml_config)
+            print(f"Loaded configuration from YAML: {config_path}")
+        except Exception as e:
+            print(f"Warning: Could not load/parse YAML {config_path}. Error: {e}. Using defaults.")
+    else:
+         print("No config file path provided or file not found. Using default/base config.")
     return config
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Training script for DiseaseAwareHVT")
+    # (Keep as is)
+    parser = argparse.ArgumentParser(description="Fine-tuning script for DiseaseAwareHVT")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML configuration file")
     return parser.parse_args()
 
-# Helper Functions
-def set_seed(seed=42):
+def set_seed(seed):
+    # (Keep as is)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
-def check_tensor(tensor, name):
-    logger = logging.getLogger()
-    if torch.isnan(tensor).any():
-        logger.warning(f"WARNING: {name} contains NaN values")
-    if torch.isinf(tensor).any():
-        logger.warning(f"WARNING: {name} contains Inf values")
-    logger.debug(f"{name} min: {tensor.min().item()}, max: {tensor.max().item()}")
+def _interpolate_pos_embed(checkpoint_pos_embed: torch.Tensor, 
+                           model_pos_embed: nn.Parameter, 
+                           patch_size: int) -> torch.Tensor:
+    # (Keep as is -unchanged from previous correction)
+    N_src = checkpoint_pos_embed.shape[1]
+    N_tgt = model_pos_embed.shape[1]
+    C = model_pos_embed.shape[2] 
+    if N_src == N_tgt and checkpoint_pos_embed.shape[2] == C: return checkpoint_pos_embed
+    logger = logging.getLogger(__name__) # Get logger inside function
+    logger.info(f"Interpolating positional embedding from {N_src} to {N_tgt} patches.")
+    if math.isqrt(N_src)**2 == N_src: H0 = W0 = math.isqrt(N_src)
+    else: 
+        if N_src == 196 and patch_size == 16: H0, W0 = 14, 14; logger.info(f"Inferred source grid {H0}x{W0}")
+        else: logger.error(f"Cannot infer src grid from N_src={N_src}."); return model_pos_embed.data 
+    if math.isqrt(N_tgt)**2 == N_tgt: H_tgt = W_tgt = math.isqrt(N_tgt)
+    else:
+         target_H_img = default_config['img_size'][0]; target_W_img = default_config['img_size'][1]
+         H_tgt = target_H_img // patch_size; W_tgt = target_W_img // patch_size
+         if H_tgt * W_tgt != N_tgt: logger.error(f"Inferred target grid {H_tgt}x{W_tgt} != N_tgt={N_tgt}."); return model_pos_embed.data
+    pos_embed_reshaped = checkpoint_pos_embed.reshape(1, H0, W0, C).permute(0, 3, 1, 2) 
+    pos_embed_interpolated = F.interpolate(pos_embed_reshaped, size=(H_tgt, W_tgt), mode='bicubic', align_corners=False)
+    pos_embed_interpolated = pos_embed_interpolated.permute(0, 2, 3, 1).flatten(1, 2) 
+    if pos_embed_interpolated.shape != model_pos_embed.shape: logger.error(f"Interpolated shape {pos_embed_interpolated.shape} != model shape {model_pos_embed.shape}."); return model_pos_embed.data
+    logger.info(f"Positional embedding interpolated successfully.")
+    return pos_embed_interpolated
 
-# Data Augmentation
-class FinetuneAugmentation:
-    def __init__(self, img_size):
-        self.img_size = img_size
-        self.transform = T.Compose([
-            T.RandomHorizontalFlip(p=0.5),
-            T.RandomVerticalFlip(p=0.5),
-            T.RandomRotation(degrees=15),  # Reduced from 30; adjust further if needed
-            T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
-            T.RandomResizedCrop(size=self.img_size, scale=(0.8, 1.0)),
-            T.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1), shear=10),
-        ])
 
-    def __call__(self, rgb):
-        return self.transform(rgb)
+def load_pretrained_backbone(model: nn.Module, checkpoint_path: str, config: dict):
+    """ Loads weights from pre-trained checkpoint, handling pos embed interpolation and head mismatch. """
+    logger = logging.getLogger(__name__)
+    if not os.path.exists(checkpoint_path):
+        logger.warning(f"Pretrained checkpoint not found: {checkpoint_path}. Training from scratch.")
+        return model
 
-# Dataset Class
-class SARCLD2024Dataset(Dataset):
-    def __init__(self, root_dir: str, img_size: tuple, split: str = "train", train_split: float = 0.8, normalize: bool = True):
-        self.root_dir = root_dir
-        self.img_size = img_size
-        self.split = split
-        self.train_split = train_split
-        self.normalize = normalize
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        logger.info(f"Loaded checkpoint state_dict from: {checkpoint_path}")
+
+        current_model_dict = model.state_dict()
         
-        self.classes = [
-            "Bacterial Blight", "Curl Virus", "Healthy Leaf", 
-            "Herbicide Growth Damage", "Leaf Hopper Jassids", 
-            "Leaf Redding", "Leaf Variegation"
-        ]
-        self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+        # --- State Dict Modification ---
+        new_state_dict = OrderedDict()
+        loaded_keys = set(checkpoint.keys())
+        model_keys = set(current_model_dict.keys())
         
-        self.image_paths = []
-        self.labels = []
-        
-        if not os.path.exists(root_dir):
-            raise FileNotFoundError(f"Dataset root directory does not exist: {root_dir}")
-        
-        logging.info(f"Loading dataset from: {root_dir}")
-        
-        for dataset_type in ["Original Dataset", "Augmented Dataset"]:
-            dataset_path = os.path.join(root_dir, dataset_type)
-            if not os.path.isdir(dataset_path):
-                logging.warning(f"Dataset path does not exist, skipping: {dataset_path}")
+        for k, v in checkpoint.items():
+            if k not in model_keys:
+                # logger.debug(f"Skipping key from checkpoint not in model: {k}")
+                continue # Skip keys not present in the current model structure
+
+            # Handle Positional Embedding interpolation
+            if k in ["rgb_pos_embed", "spectral_pos_embed"]:
+                if v.shape != current_model_dict[k].shape:
+                    logger.info(f"Shape mismatch for {k}. Attempting interpolation.")
+                    interpolated_embed = _interpolate_pos_embed(
+                        v, current_model_dict[k], config['hvt_patch_size']
+                    )
+                    if interpolated_embed.shape == current_model_dict[k].shape:
+                        new_state_dict[k] = interpolated_embed
+                    else:
+                        logger.warning(f"Interpolation failed or resulted in wrong shape for {k}. Skipping this weight.")
+                else:
+                    new_state_dict[k] = v # Shapes match, copy directly
+                continue # Move to next key after handling pos embed
+
+            # Handle Classification Head mismatch (explicitly skip loading these keys)
+            if k.startswith("head."):
+                logger.info(f"Skipping classification head weight from checkpoint: {k}")
                 continue
-            
-            logging.info(f"Scanning dataset: {dataset_type}")
-            for class_name in self.classes:
-                class_path = os.path.join(dataset_path, class_name)
-                if not os.path.isdir(class_path):
-                    logging.warning(f"Class path does not exist, skipping: {class_path}")
-                    continue
-                
-                logging.info(f"Scanning class: {class_name}")
-                for img_name in os.listdir(class_path):
-                    if img_name.lower().endswith((".jpg", ".jpeg", ".png")):
-                        img_path = os.path.join(class_path, img_name)
-                        self.image_paths.append(img_path)
-                        self.labels.append(self.class_to_idx[class_name])
+
+            # If shapes match for other keys, copy them
+            if v.shape == current_model_dict[k].shape:
+                new_state_dict[k] = v
+            else:
+                logger.warning(f"Skipping key '{k}' due to shape mismatch: ckpt {v.shape} vs model {current_model_dict[k].shape}")
+
+        # Load the carefully filtered and potentially modified state dict
+        missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict=False)
         
-        self.image_paths = np.array(self.image_paths)
-        self.labels = np.array(self.labels)
+        logger.info("Attempted loading pre-trained weights with filtering.")
         
-        if len(self.image_paths) == 0:
-            raise ValueError(f"No images found in the dataset at {root_dir}.")
-        
-        class_counts = Counter(self.labels)
-        logging.info("Class distribution:")
-        for idx, count in class_counts.items():
-            class_name = self.classes[idx]
-            logging.info(f"Class {class_name}: {count} samples ({count/len(self.labels)*100:.2f}%)")
-        
-        logging.info(f"Total images found: {len(self.image_paths)}")
-        
-        indices = np.arange(len(self.image_paths))
-        np.random.seed(42)
-        np.random.shuffle(indices)
-        
-        split_idx = int(len(indices) * self.train_split)
-        train_indices = indices[:split_idx]
-        val_indices = indices[split_idx:]
-        self.indices = train_indices if self.split == "train" else val_indices
-        
-        logging.info(f"{self.split.capitalize()} split size: {len(self.indices)} samples")
-        
-        transforms_list = [
-            T.Resize(self.img_size),
-            T.ToTensor(),
-        ]
-        if self.normalize:
-            transforms_list.append(T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]))
-        self.transform = T.Compose(transforms_list)
-    
-    def __len__(self):
-        return len(self.indices)
-    
-    def __getitem__(self, idx):
-        actual_idx = self.indices[idx]
-        img_path = self.image_paths[actual_idx]
-        label = self.labels[actual_idx]
-        logging.debug(f"Accessing image: {img_path}, label: {label}, idx: {idx}")
-        
-        img = Image.open(img_path).convert("RGB")
-        rgb = self.transform(img)
-        
-        return rgb, torch.tensor(label, dtype=torch.long)
+        # Report missing/unexpected keys (should be more informative now)
+        if missing_keys:
+             # Keys expected to be missing if only backbone was saved are head.* / head_norm.*
+             # Since we explicitly removed 'head.*' from new_state_dict, these shouldn't appear here
+             # unless head_norm wasn't in the checkpoint either.
+             logger.warning(f"Weights not found in checkpoint for model keys: {missing_keys}")
+        if unexpected_keys:
+            # This list contains keys from new_state_dict that are *not* in the model's state_dict.
+            # Should be empty given our initial filtering `if k not in model_keys`.
+            logger.error(f"Logic error: Unexpected keys found when loading filtered state_dict: {unexpected_keys}")
 
-    def get_class_weights(self):
-        class_counts = Counter(self.labels)
-        total_samples = len(self.labels)
-        weights = [total_samples / (len(self.classes) * class_counts[i]) for i in range(len(self.classes))]
-        return torch.tensor(weights, dtype=torch.float)
+        logger.info("Successfully processed pre-trained backbone weights loading.")
+        return model
 
-# Model Definition
-class SwinTransformerBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads):
-        super().__init__()
-        self.norm1 = nn.LayerNorm(embed_dim)
-        self.attention = nn.MultiheadAttention(embed_dim, num_heads)
-        self.norm2 = nn.LayerNorm(embed_dim)
-        self.mlp = nn.Sequential(
-            nn.Linear(embed_dim, embed_dim * 4),
-            nn.GELU(),
-            nn.Linear(embed_dim * 4, embed_dim),
-        )
-        self.drop_path = nn.Dropout(0.1) if 0.1 > 0 else nn.Identity()
-        self._initialize_weights()
+    except Exception as e:
+        logger.error(f"Error loading pretrained checkpoint from {checkpoint_path}: {e}", exc_info=True)
+        logger.warning("Could not load pretrained weights. Training from scratch.")
+        return model
 
-    def forward(self, x):
-        attn_output, _ = self.attention(x, x, x)
-        x = self.norm1(x + attn_output)
-        mlp_output = self.mlp(x)
-        x = self.norm2(x + mlp_output)
-        return x
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-class DiseaseAwareHVT(nn.Module):
-    def __init__(self, img_size, num_classes, embed_dim=128, num_heads=4):
-        super().__init__()
-        self.efficientnet = torchvision.models.efficientnet_b3(weights="IMAGENET1K_V1")
-        self.efficientnet.classifier = nn.Identity()
-        eff_output_dim = 1536
-
-        self.patch_embed = nn.Conv2d(3, 128, kernel_size=4, stride=4)
-        num_patches = (img_size[0] // 4) * (img_size[1] // 4)
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, 128))
-        self.swin_layers = nn.ModuleList([SwinTransformerBlock(embed_dim=embed_dim, num_heads=num_heads) for _ in range(6)])
-        self.norm = nn.LayerNorm(128)
-        swin_output_dim = 128
-
-        self.classifier = nn.Sequential(
-            nn.Linear(eff_output_dim + swin_output_dim, 1024),  # Reduced from 2048
-            nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(1024, 512),  # Reduced from 1024
-            nn.ReLU(),
-            nn.Dropout(0.4),
-            nn.Linear(512, num_classes)  # Adjusted to match reduction
-        )
-        self._initialize_weights()
-        for name, param in self.named_parameters():
-            logging.info(f"Parameter name: {name}, shape: {param.shape}, requires_grad: {param.requires_grad}")
-
-    def forward(self, x):
-        eff_features = self.efficientnet(x)
-        logging.debug(f"eff_features min: {eff_features.min()}, max: {eff_features.max()}")
-        check_tensor(eff_features, "eff_features")
-        eff_features = torch.clamp(eff_features, min=-1e4, max=1e4)
-
-        x = self.patch_embed(x).flatten(2).transpose(1, 2) + self.pos_embed
-        for layer in self.swin_layers:
-            x = layer(x)
-        swin_features = self.norm(x).mean(dim=1)
-        swin_features = torch.clamp(swin_features, min=-1e4, max=1e4)
-
-        combined = torch.cat((eff_features, swin_features), dim=1)
-        logits = self.classifier(combined)  # Removed / 100.0 scaling
-        return logits
-
-    def _initialize_weights(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-
-# Training Loop
+# --- Main Fine-tuning Function ---
 def main():
+    # (Keep dataset, model init, optimizer, scheduler, trainer init as is)
+    # ... (previous code from main() up to the training loop) ...
     args = parse_args()
-    config = load_config(args.config)
+    config = load_config_yaml(args.config)
+
+    log_file = config.get("log_file_finetune", "finetune.log")
+    log_dir = config.get("log_dir", "logs")
+    setup_logging(log_file_name=log_file, log_dir=log_dir, log_level=logging.INFO, logger_name=None) 
+    logger = logging.getLogger(__name__) 
+
     set_seed(config["seed"])
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info("Starting fine-tuning process...")
+    logger.info(f"Loaded configuration: {config}")
+    device = config["device"]
+    logger.info(f"Using device: {device}")
+    if device == "cuda": logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    os.makedirs("logs", exist_ok=True)
-    logging.getLogger().handlers = []
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s - %(levelname)s - %(message)s',
-                        filename="training.log",
-                        filemode='w')
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logging.getLogger().addHandler(console_handler)
-    logging.getLogger('PIL').setLevel(logging.WARNING)
+    # --- Datasets and DataLoaders ---
+    logger.info("Setting up datasets and dataloaders...")
+    train_dataset = SARCLD2024Dataset(
+        root_dir=config["data_root"], img_size=config["img_size"], split="train", 
+        train_split_ratio=config["train_split"], normalize_for_model=config["normalize_data"],
+        random_seed=config["seed"] 
+    )
+    val_dataset = SARCLD2024Dataset(
+        root_dir=config["data_root"], img_size=config["img_size"], split="val", 
+        train_split_ratio=config["train_split"], normalize_for_model=config["normalize_data"],
+        random_seed=config["seed"] 
+    )
+    
+    sampler = None; class_weights = None # Initialize
+    if config.get("use_weighted_sampler", False):
+        class_weights = train_dataset.get_class_weights() 
+        if class_weights is not None:
+            logger.info("Using WeightedRandomSampler for training.")
+            train_indices = train_dataset.current_indices
+            train_labels = train_dataset.labels[train_indices]
+            sample_weights = torch.zeros(len(train_labels)) 
+            for i in range(config["num_classes"]):
+                 if i < len(class_weights): sample_weights[train_labels == i] = class_weights[i]
+            sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
+        else: logger.warning("Could not compute class weights, disabling WeightedRandomSampler.")
 
-    # Dataset and DataLoader
-    train_dataset = SARCLD2024Dataset(config["data_root"], config["img_size"], split="train", 
-                                      train_split=config["train_split"], normalize=True)
-    val_dataset = SARCLD2024Dataset(config["data_root"], config["img_size"], split="val", 
-                                    train_split=config["train_split"], normalize=True)
-    class_weights = train_dataset.get_class_weights().to(device)
+    train_loader = DataLoader(
+        train_dataset, batch_size=config["batch_size"], 
+        sampler=sampler, shuffle=(sampler is None), 
+        num_workers=4, pin_memory=True, drop_last=True
+    )
+    val_loader = DataLoader(
+        val_dataset, batch_size=config["batch_size"], shuffle=False, 
+        num_workers=4, pin_memory=True, drop_last=False
+    )
+    logger.info(f"Train loader: {len(train_loader)} batches. Validation loader: {len(val_loader)} batches.")
+    class_names = train_dataset.get_class_names()
 
-    class_weights_np = class_weights.cpu().numpy()
-    num_samples = len(train_dataset)
-    sample_weights = np.zeros(num_samples)
-    labels = train_dataset.labels[train_dataset.indices]
-    for i in range(config["num_classes"]):
-        sample_weights[labels == i] = class_weights_np[i]
-    sampler = WeightedRandomSampler(sample_weights, num_samples, replacement=True)
+    # --- Model Selection and Initialization ---
+    logger.info(f"Initializing model: {config['model_name']}")
+    model = DiseaseAwareHVT(
+        img_size=config["img_size"],
+        patch_size=config["hvt_patch_size"],
+        num_classes=config["num_classes"],
+        embed_dim_rgb=config["hvt_embed_dim_rgb"],
+        embed_dim_spectral=config["hvt_embed_dim_spectral"],
+        spectral_channels=config["hvt_spectral_channels"],
+        depths=config["hvt_depths"],
+        num_heads=config["hvt_num_heads"],
+        mlp_ratio=config["hvt_mlp_ratio"],
+        qkv_bias=config["hvt_qkv_bias"],
+        drop_rate=config["hvt_model_drop_rate"],
+        attn_drop_rate=config["hvt_attn_drop_rate"],
+        drop_path_rate=config["hvt_drop_path_rate"],
+        use_dfca=config["hvt_use_dfca"],
+    )
 
-    train_loader = DataLoader(train_dataset, batch_size=config["finetune_batch_size"], sampler=sampler, 
-                              num_workers=4, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=config["finetune_batch_size"], shuffle=False, 
-                            num_workers=4, pin_memory=True)
+    if config["load_pretrained"]:
+        model = load_pretrained_backbone(model, config["pretrained_checkpoint_path"], config) # Pass config
+    
+    model = model.to(device)
 
-    augmentations = FinetuneAugmentation(config["img_size"])
-    finetune_model = DiseaseAwareHVT(img_size=config["img_size"], num_classes=config["num_classes"], 
-                                     embed_dim=config["embed_dim"], num_heads=config["num_heads"]).to(device)
+    # --- Augmentations, Loss, Optimizer, Scheduler ---
+    augmentations = FinetuneAugmentation(config["img_size"]) if config["augmentations_enabled"] else None
+    loss_weights = class_weights.to(device) if class_weights is not None and not config.get("use_weighted_sampler", False) else None
+    if loss_weights is not None: logger.info("Using weighted CrossEntropyLoss.")
+    criterion = nn.CrossEntropyLoss(weight=loss_weights, label_smoothing=config["loss_label_smoothing"])
+    if config["optimizer"].lower() == "adamw": optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], weight_decay=config["weight_decay"], **config.get("optimizer_params", {}))
+    else: optimizer = torch.optim.AdamW(model.parameters(), lr=config["learning_rate"], weight_decay=config["weight_decay"]) # Default AdamW
 
-    optimizer = torch.optim.AdamW(finetune_model.parameters(), lr=config["initial_learning_rate"], 
-                                  weight_decay=config["weight_decay"])
-    warmup_scheduler = LinearLR(optimizer, start_factor=0.1, total_iters=config["warmup_epochs"])
-    cosine_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=config["t_0"], T_mult=config["t_mult"], 
-                                                   eta_min=config["eta_min"])
-    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], 
-                             milestones=[config["warmup_epochs"]])
-    lr_reducer = ReduceLROnPlateau(optimizer, mode='max', factor=config["reduce_lr_factor"], 
-                                   patience=config["reduce_lr_patience"])
+    scheduler = None; lr_reducer = None
+    if config.get("scheduler"):
+        if config["warmup_epochs"] > 0: warmup = LinearLR(optimizer, start_factor=config.get("warmup_lr_init_factor", 0.1), total_iters=config["warmup_epochs"])
+        else: warmup = None
+        sched_type = config["scheduler"].lower(); main_sched = None
+        if sched_type == "cosineannealingwarmrestarts": main_sched = CosineAnnealingWarmRestarts(optimizer, T_0=config["cosine_t_0"], T_mult=config["cosine_t_mult"], eta_min=config["eta_min"]); logger.info("Using CosineAnnealingWarmRestarts scheduler.")
+        elif sched_type == "reducelronplateau": lr_reducer = ReduceLROnPlateau(optimizer, mode='max', factor=config["reducelr_factor"], patience=config["reducelr_patience"], verbose=True); logger.info("Using ReduceLROnPlateau scheduler.")
+        else: logger.warning(f"Unsupported scheduler type: {config['scheduler']}.")
+        schedulers_to_combine = [s for s in [warmup, main_sched] if s is not None]
+        if len(schedulers_to_combine) > 1: scheduler = SequentialLR(optimizer, schedulers=schedulers_to_combine, milestones=[config["warmup_epochs"]]); logger.info("Combined Warmup and Main scheduler.")
+        elif len(schedulers_to_combine) == 1: scheduler = schedulers_to_combine[0]
+        elif warmup is None and main_sched is None and lr_reducer is None: logger.info("No valid scheduler configured.")
+
     scaler = GradScaler(enabled=config["amp_enabled"])
 
-    patience_counter = 0
-    best_val_acc = 0.0
+    # --- Initialize Trainer ---
+    trainer = Finetuner(
+        model=model, optimizer=optimizer, criterion=criterion, device=device, scaler=scaler,
+        scheduler=scheduler, accumulation_steps=config["accumulation_steps"],
+        clip_grad_norm=config["clip_grad_norm"], augmentations=augmentations,
+        num_classes=config["num_classes"]
+    )
 
-    for epoch in range(20):
-        logging.info(f"Using device: {device}")
-        logging.info(f"Training dataset size: {len(train_dataset)} samples")
-        logging.info(f"Validation dataset size: {len(val_dataset)} samples")
-        logging.info("Starting training...")
+    # --- Training Loop ---
+    # (Keep training loop logic as is)
+    best_val_metric = 0.0; metric_to_monitor = 'accuracy'; patience_counter = 0
+    logger.info(f"Starting fine-tuning loop for {config['epochs']} epochs...")
+    for epoch in range(1, config["epochs"] + 1):
+        avg_train_loss = trainer.train_one_epoch(train_loader, epoch, config["epochs"])
+        if epoch % config["evaluate_every_n_epochs"] == 0:
+            avg_val_loss, val_metrics = trainer.validate_one_epoch(val_loader, class_names=class_names)
+            current_val_metric = val_metrics.get(metric_to_monitor, 0.0)
+            if lr_reducer: lr_reducer.step(current_val_metric)
+            if current_val_metric > best_val_metric:
+                best_val_metric = current_val_metric
+                trainer.save_model_checkpoint(config["best_model_path"])
+                logger.info(f"Epoch {epoch}: New best model! Val {metric_to_monitor}: {best_val_metric:.4f}")
+                patience_counter = 0
+            else:
+                patience_counter += 1
+                logger.info(f"Epoch {epoch}: Val {metric_to_monitor} ({current_val_metric:.4f}) no improve. Patience: {patience_counter}/{config.get('early_stopping_patience', float('inf'))}")
+            if patience_counter >= config.get("early_stopping_patience", float('inf')):
+                logger.info(f"Early stopping triggered.")
+                break
+        if scheduler and not lr_reducer: scheduler.step()
 
-        finetune_model.train()
-        train_loss = 0.0
-        optimizer.zero_grad()
-
-        with tqdm(total=len(train_loader), desc=f"Epoch {epoch + 1}/20") as pbar:
-            for i, (rgb, labels) in enumerate(train_loader):
-                rgb, labels = rgb.to(device), labels.to(device)
-                logging.debug(f"Train RGB min: {rgb.min()}, max: {rgb.max()}")
-                if torch.isnan(rgb).any() or torch.isinf(rgb).any():
-                    logging.warning(f"Skipping batch {i} due to NaN/Inf in inputs")
-                    continue
-
-                if config["augmentations_enabled"]:
-                    rgb_aug = augmentations(rgb)
-                else:
-                    rgb_aug = rgb
-
-                with autocast(enabled=config["amp_enabled"]):
-                    outputs = finetune_model(rgb_aug)
-                    check_tensor(outputs, "Training Outputs")
-                    if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                        logging.warning(f"Skipping batch {i} due to NaN/Inf in outputs")
-                        continue
-                    loss = nn.CrossEntropyLoss(weight=class_weights, 
-                                               label_smoothing=config["label_smoothing"])(outputs, labels)
-
-                loss = loss / config["accumulation_steps"]
-                scaler.scale(loss).backward()
-                if (i + 1) % config["accumulation_steps"] == 0:
-                    torch.nn.utils.clip_grad_norm_(finetune_model.parameters(), max_norm=config["clip_grad_norm"])
-                    scaler.step(optimizer)
-                    scaler.update()
-                    optimizer.zero_grad()
-
-                train_loss += loss.item() * config["accumulation_steps"]
-                pbar.update(1)
-                pbar.set_postfix({"Loss": f"{loss.item() * config['accumulation_steps']:.4f}"})
-                if i % config["log_interval"] == 0:
-                    logging.info(f"Batch {i}: Loss = {loss.item() * config['accumulation_steps']:.4f}")
-
-        train_loss /= len(train_loader)
-
-        val_loss, val_acc, val_f1 = validate_model(finetune_model, val_loader, class_weights, device, 
-                                                   config["amp_enabled"])
-        scheduler.step()
-        lr_reducer.step(val_acc)
-
-        print(f"Epoch {epoch + 1}/20 - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, "
-              f"Val Acc: {val_acc:.4f}, Val F1: {val_f1:.4f}, Best Acc: {best_val_acc:.4f}")
-
-        if val_acc > best_val_acc and not np.isnan(val_loss):
-            best_val_acc = val_acc
-            torch.save(finetune_model.state_dict(), config["best_model_path"])
-            logging.info(f"New best model saved with Val Acc: {best_val_acc:.4f}")
-            patience_counter = 0
-        else:
-            patience_counter += 1
-
-        if patience_counter >= config["patience"]:
-            logging.info(f"Early stopping after {config['patience']} epochs without improvement")
-            break
-
-    torch.save(finetune_model.state_dict(), "finetuned_hvt.pth")
-    logging.info(f"Final model saved. Best validation accuracy: {best_val_acc:.4f}")
-
-def validate_model(model, val_loader, class_weights, device, amp_enabled):
-    model.eval()
-    val_loss = 0.0
-    all_preds = []
-    all_labels = []
-    logger = logging.getLogger()
-
-    with torch.no_grad():
-        for rgb, labels in val_loader:
-            rgb, labels = rgb.to(device), labels.to(device)
-            logger.debug(f"Val RGB min: {rgb.min()}, max: {rgb.max()}")
-            if torch.isnan(rgb).any() or torch.isinf(rgb).any():
-                logger.warning("NaN or Inf detected in validation inputs")
-                continue
-
-            with autocast(enabled=amp_enabled):
-                outputs = model(rgb)
-                outputs = torch.clamp(outputs, min=-20, max=20)
-                logger.debug(f"Validation Outputs min: {outputs.min()}, max: {outputs.max()}")
-                if torch.isnan(outputs).any() or torch.isinf(outputs).any():
-                    logger.warning("NaN or Inf detected in validation outputs")
-                    continue
-                loss = nn.CrossEntropyLoss(weight=class_weights)(outputs, labels)
-
-            val_loss += loss.item()
-            preds = torch.argmax(outputs, dim=1)
-            all_preds = np.concatenate((all_preds, preds.cpu().numpy()))
-            all_labels = np.concatenate((all_labels, labels.cpu().numpy()))
-
-    val_loss /= len(val_loader)
-    if len(all_labels) > 0 and len(all_preds) > 0:
-        val_acc = accuracy_score(all_labels, all_preds)
-        val_f1 = f1_score(all_labels, all_preds, average='weighted')
-    else:
-        val_acc = 0.0
-        val_f1 = 0.0
-
-    logger.debug(f"Validation labels range: min {np.min(all_labels)}, max {np.max(all_labels)}")
-    return val_loss, val_acc, val_f1
+    logger.info(f"Fine-tuning finished. Best validation {metric_to_monitor}: {best_val_metric:.4f}")
+    trainer.save_model_checkpoint(config["final_model_path"])
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
-        raise
+        logger = logging.getLogger(__name__) 
+        logger.exception(f"An critical error occurred during fine-tuning main execution: {e}")
+        sys.exit(1)
