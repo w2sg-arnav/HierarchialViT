@@ -759,3 +759,8 @@ torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.21 GiB. GPU
 2025-05-08 17:51:22,351 - __main__.param_groups - INFO - LLRD: Assigning base LR (3.00e-04) to unassigned param: norm_spectral_final.bias
 2025-05-08 17:51:22,441 - __main__.run_session - INFO - Optimizer re-init for full model with base LR: 0.0003.
 2025-05-08 17:51:22,441 - __main__.run_session - INFO - Scheduler re-init for unfreeze: CosineAnnealingLR
+2025-05-08 17:57:43,033 - phase5_multimodal_hpo.finetune.trainer - INFO - Epoch 11 training finished. Avg Loss: 1.3795, Current LR: 3.00e-04
+2025-05-08 17:58:39,499 - phase5_multimodal_hpo.finetune.trainer - INFO - Validation Summary -- Avg Loss: 1.3888, accuracy: 0.2195, f1_macro: 0.1576, f1_weighted: 0.1629, precision_macro: 0.2414, precision_weighted: 0.2625, recall_macro: 0.2262, recall_weighted: 0.2195, f1_Bacterial_Blight: 0.2675, f1_Curl_Virus: 0.0000, f1_Healthy_Leaf: 0.0000, f1_Herbicide_Growth_Damage: 0.0924, f1_Leaf_Hopper_Jassids: 0.2971, f1_Leaf_Redding: 0.4039, f1_Leaf_Variegation: 0.0426 (TTA: 4 views)
+2025-05-08 17:58:39,504 - __main__.run_session - INFO - E11/200 Sum | TrL:1.3795 | VlL:1.3888 | VAcc:0.2195 | VF1w:0.1629 | Mon(accuracy):0.2195 | LR:3.00e-04 | TrT:380.6s | VlT:56.5s
+2025-05-08 17:58:40,067 - phase5_multimodal_hpo.finetune.trainer - INFO - Checkpoint saved: /teamspace/studios/this_studio/cvpr25/phase5_multimodal_hpo/phase5_checkpoints/phase5_best_90percent.pth (Epoch 11, Best 0.2195)
+2025-05-08 17:58:40,068 - __main__.run_session - INFO - E11: New best val accuracy: 0.2195. Ckpt saved.
