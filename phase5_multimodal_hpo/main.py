@@ -11,74 +11,86 @@ import argparse
 import yaml
 import torch.nn.functional as F 
 import math 
-from collections import OrderedDict # Keep if needed by loaded code, not directly used here now
+from collections import OrderedDict 
 
 # --- Path Setup ---
 import sys
-current_dir = os.path.dirname(os.path.abspath(__file__))
-project_root = os.path.dirname(current_dir) 
+current_dir = os.path.dirname(os.path.abspath(__file__)) # .../phase5_multimodal_hpo
+project_root = os.path.dirname(current_dir) # .../cvpr25
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
     print(f"DEBUG: Added project root to sys.path: {project_root}")
 
 # --- Project Imports ---
-from phase5_multimodal_hpo.config import config as default_config 
-from phase5_multimodal_hpo.dataset import SARCLD2024Dataset
-from phase5_multimodal_hpo.utils.augmentations import FinetuneAugmentation
+# Use ABSOLUTE imports from project root perspective
+from phase5_multimodal_hpo.config import config as default_config # Import config from THIS phase
+from phase5_multimodal_hpo.dataset import SARCLD2024Dataset   # Import dataset from THIS phase
+from phase5_multimodal_hpo.utils.augmentations import FinetuneAugmentation # Import utils from THIS phase
 from phase5_multimodal_hpo.utils.logging_setup import setup_logging
-from phase5_multimodal_hpo.finetune.trainer import Finetuner
-from phase2_model.models.hvt import DiseaseAwareHVT # Use canonical HVT
+from phase5_multimodal_hpo.finetune.trainer import Finetuner # Import trainer from THIS phase
+
+# Use ABSOLUTE imports for models from other packages
+from phase2_model.models.hvt import DiseaseAwareHVT # Use canonical HVT from Phase 2
 
 # --- Helper Functions --- 
 def load_config_yaml(config_path=None):
-    config = default_config.copy() 
+    """ Loads configuration from YAML file, falling back to defaults. """
+    config = default_config.copy() # Start with Phase 5 defaults
     if config_path and os.path.exists(config_path):
         try:
-            with open(config_path, 'r') as f: yaml_config = yaml.safe_load(f)
-            if yaml_config: config.update(yaml_config)
+            with open(config_path, 'r') as f:
+                yaml_config = yaml.safe_load(f)
+                if yaml_config: 
+                    config.update(yaml_config) # Override defaults with YAML values
             print(f"Loaded configuration from YAML: {config_path}")
-        except Exception as e: print(f"Warning: Could not load/parse YAML {config_path}. Error: {e}. Using defaults.")
-    else: print("No config file path provided or file not found. Using default/base config.")
+        except Exception as e:
+            print(f"Warning: Could not load/parse YAML config file {config_path}. Error: {e}. Using default/base config.")
+    else:
+         print("No config file path provided or file not found. Using default/base config.")
     return config
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Fine-tuning script for DiseaseAwareHVT (Phase 5)")
+    """ Parses command line arguments. """
+    parser = argparse.ArgumentParser(description="Fine-tuning script for DiseaseAwareHVT (Phase 5 - Multi-Modal)")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML configuration file")
-    parser.add_argument("--lr", type=float, default=None, help="Override learning rate (for HPO)")
-    parser.add_argument("--wd", type=float, default=None, help="Override weight decay (for HPO)")
-    parser.add_argument("--ls", type=float, default=None, help="Override label smoothing (for HPO)")
-    # Add other HPO overrides if needed
+    # Add HPO overrides here if running single trials via command line
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--wd", type=float, default=None, help="Override weight decay")
+    parser.add_argument("--ls", type=float, default=None, help="Override label smoothing")
+    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
+    parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
     return parser.parse_args()
 
 def set_seed(seed):
+    """ Sets random seed for reproducibility. """
     torch.manual_seed(seed)
-    if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
-def _interpolate_pos_embed(chkpt_embed, model_embed, patch_size):
-    # (Keep this helper function exactly as defined in the previous correct version)
+def _interpolate_pos_embed(chkpt_embed: torch.Tensor, 
+                           model_embed: nn.Parameter, 
+                           patch_size: int,
+                           target_img_size_from_config: tuple) -> torch.Tensor: # Pass target size explicitly
+    """ Helper function to interpolate positional embeddings. """
+    logger = logging.getLogger(__name__) 
     N_src, C_src = chkpt_embed.shape[1], chkpt_embed.shape[2]
     N_tgt, C_tgt = model_embed.shape[1], model_embed.shape[2]
-    if N_src == N_tgt and C_src == C_tgt: return chkpt_embed
-    logger = logging.getLogger(__name__)
-    if C_src != C_tgt: logger.warning(f"Pos embed dim mismatch: {C_src} vs {C_tgt}. Cannot load."); return model_embed.data
-    logger.info(f"Interpolating pos embed {N_src} -> {N_tgt} patches.")
-    if math.isqrt(N_src)**2 == N_src: H0 = W0 = math.isqrt(N_src)
-    elif N_src == 196 and patch_size == 16: H0, W0 = 14, 14; logger.info(f"Inferred src grid {H0}x{W0}.")
-    else: logger.error(f"Cannot infer src grid from N_src={N_src}."); return model_embed.data
-    if math.isqrt(N_tgt)**2 == N_tgt: H_tgt = W_tgt = math.isqrt(N_tgt)
-    else:
-        # Infer target grid size from model's intended img_size in config
-        # This relies on config being accessible or passed correctly
-        try:
-            target_H_img = default_config['img_size'][0]; target_W_img = default_config['img_size'][1]
-        except KeyError: # Fallback if img_size not in default_config (should be)
-             target_H_img, target_W_img = 224, 224 # Fallback size
-             logger.warning(f"Using fallback img_size {target_H_img}x{target_W_img} for pos embed interpolation.")
 
-        H_tgt = target_H_img // patch_size; W_tgt = target_W_img // patch_size
-        if H_tgt * W_tgt != N_tgt: logger.error(f"Inferred tgt grid {H_tgt}x{W_tgt} != N_tgt={N_tgt}."); return model_embed.data
+    if N_src == N_tgt and C_src == C_tgt: return chkpt_embed
+    if C_src != C_tgt: logger.warning(f"Pos embed dim mismatch: {C_src} vs {C_tgt}. Cannot load."); return model_embed.data
+
+    logger.info(f"Interpolating positional embedding from {N_src} to {N_tgt} patches.")
     
+    if math.isqrt(N_src)**2 == N_src: H0 = W0 = math.isqrt(N_src)
+    elif N_src == 196 and patch_size == 16: H0, W0 = 14, 14; logger.info(f"Inferred source grid {H0}x{W0}.")
+    else: logger.error(f"Cannot infer source grid from N_src={N_src}."); return model_embed.data 
+
+    # Infer target grid from passed target_img_size_from_config
+    H_tgt = target_img_size_from_config[0] // patch_size
+    W_tgt = target_img_size_from_config[1] // patch_size
+    if H_tgt * W_tgt != N_tgt: logger.error(f"Target grid {H_tgt}x{W_tgt} != N_tgt={N_tgt}."); return model_embed.data
+        
     pos_embed_reshaped = chkpt_embed.reshape(1, H0, W0, C_tgt).permute(0, 3, 1, 2) 
     pos_embed_interp = F.interpolate(pos_embed_reshaped, size=(H_tgt, W_tgt), mode='bicubic', align_corners=False)
     pos_embed_interp = pos_embed_interp.permute(0, 2, 3, 1).flatten(1, 2) 
@@ -88,35 +100,45 @@ def _interpolate_pos_embed(chkpt_embed, model_embed, patch_size):
 
 def load_pretrained_backbone(model: nn.Module, checkpoint_path: str, config: dict):
     """ Loads weights, handles pos embed interpolation and head mismatch. """
-    # (Keep this function mostly as is, ensure logger is available)
     logger = logging.getLogger(__name__)
+    if not os.path.isabs(checkpoint_path):
+        checkpoint_path = os.path.join(project_root, checkpoint_path) # Assumes relative to project root
+        logger.info(f"Resolved relative checkpoint path to: {checkpoint_path}")
+
     if not os.path.exists(checkpoint_path):
         logger.warning(f"Pretrained checkpoint not found: {checkpoint_path}. Training from scratch.")
         return model
+
     try:
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
         logger.info(f"Loaded checkpoint state_dict from: {checkpoint_path}")
         current_model_dict = model.state_dict()
-        new_state_dict = OrderedDict() # Use OrderedDict if key order matters (usually does)
+        new_state_dict = OrderedDict() 
         
         for k, v in checkpoint.items():
             if k not in current_model_dict: continue
             if k in ["rgb_pos_embed", "spectral_pos_embed"]:
-                if v.shape != current_model_dict[k].shape:
-                    interpolated_embed = _interpolate_pos_embed(v, current_model_dict[k], config['hvt_patch_size'])
-                    if interpolated_embed.shape == current_model_dict[k].shape: new_state_dict[k] = interpolated_embed
-                    else: logger.warning(f"Interpolation failed for {k}. Skipping.")
-                else: new_state_dict[k] = v
-            elif k.startswith("head."): logger.info(f"Skipping classification head weight: {k}"); continue
-            elif v.shape == current_model_dict[k].shape: new_state_dict[k] = v
-            else: logger.warning(f"Skipping key '{k}' due to shape mismatch: ckpt {v.shape} vs model {current_model_dict[k].shape}")
+                model_param = current_model_dict.get(k)
+                if model_param is not None and v.shape != model_param.shape:
+                    # Pass necessary config values for interpolation
+                    interpolated_embed = _interpolate_pos_embed(
+                        v, model_param, config['hvt_patch_size'], config['img_size']
+                    )
+                    if interpolated_embed.shape == model_param.shape: new_state_dict[k] = interpolated_embed
+                    else: logger.warning(f"Interpolation failed/wrong shape for {k}. Skipping.")
+                elif model_param is not None: new_state_dict[k] = v 
+                continue 
+            if k.startswith("head."): logger.info(f"Skipping classification head weight: {k}"); continue
+            if k in current_model_dict and v.shape == current_model_dict[k].shape: new_state_dict[k] = v
+            else: logger.warning(f"Skipping key '{k}' due to shape mismatch: ckpt {v.shape} vs model {current_model_dict.get(k, 'MISSING').shape}")
 
         missing_keys, unexpected_keys = model.load_state_dict(new_state_dict, strict=False)
-        logger.info("Attempted loading pre-trained weights with filtering.")
-        truly_missing = [k for k in missing_keys if not k.startswith(('head.', 'head_norm.'))]
-        if truly_missing: logger.warning(f"  Unexpected MISSING keys: {truly_missing}")
-        else: logger.info(f"  Missing keys correspond to classification head (expected): {missing_keys}")
-        if unexpected_keys: logger.error(f"  Unexpected keys found in checkpoint state_dict (were not loaded): {unexpected_keys}")
+        logger.info("Attempted loading pre-trained weights with filtering and interpolation.")
+        expected_missing_prefixes = ('head.', 'head_norm.') 
+        truly_missing = [k for k in missing_keys if not k.startswith(expected_missing_prefixes)]
+        if truly_missing: logger.warning(f"  Weights MISSING for model keys: {truly_missing}")
+        else: logger.info(f"  Missing keys only in classification head (expected): {missing_keys}")
+        if unexpected_keys: logger.error(f"  Error: UNEXPECTED keys found in filtered state_dict but not in model: {unexpected_keys}")
         logger.info("Successfully processed pre-trained backbone weights loading.")
         return model
     except Exception as e:
@@ -124,30 +146,33 @@ def load_pretrained_backbone(model: nn.Module, checkpoint_path: str, config: dic
         logger.warning("Could not load pretrained weights. Training from scratch.")
         return model
 
-# --- Main Training Function (Refactored for HPO) ---
+# --- Main Training Function ---
 def run_training_session(config: dict) -> float:
     """ Runs a full training and validation loop, returns best validation metric. """
     
-    # Setup specific logger for this run if needed, or use root logger
-    logger = logging.getLogger(__name__) # Use root logger configured outside
+    logger = logging.getLogger(__name__) 
     set_seed(config["seed"])
     device = config["device"]
     
-    # --- Datasets and DataLoaders ---
+    # --- Datasets ---
     logger.info("Setting up datasets...")
     train_dataset = SARCLD2024Dataset(
-        root_dir=config["data_root"], img_size=config["img_size"], split="train", 
-        train_split_ratio=config["train_split"], 
+        root_dir=config["data_root"], 
+        img_size=config["img_size"], 
+        split="train", 
+        train_split_ratio=config["train_split_ratio"], # <<<--- CORRECTED KEY
         normalize_for_model=config["normalize_data"],
-        use_spectral=True, # <<<--- ENABLE SPECTRAL DATA LOADING
+        use_spectral=(config["hvt_spectral_channels"] > 0), 
         spectral_channels=config["hvt_spectral_channels"],
         random_seed=config["seed"] 
     )
     val_dataset = SARCLD2024Dataset(
-        root_dir=config["data_root"], img_size=config["img_size"], split="val", 
-        train_split_ratio=config["train_split"], 
+        root_dir=config["data_root"], 
+        img_size=config["img_size"], 
+        split="val", 
+        train_split_ratio=config["train_split_ratio"], # <<<--- CORRECTED KEY
         normalize_for_model=config["normalize_data"],
-        use_spectral=True, # <<<--- ENABLE SPECTRAL DATA LOADING
+        use_spectral=(config["hvt_spectral_channels"] > 0), 
         spectral_channels=config["hvt_spectral_channels"],
         random_seed=config["seed"] 
     )
@@ -167,6 +192,8 @@ def run_training_session(config: dict) -> float:
     train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], sampler=sampler, shuffle=(sampler is None), num_workers=4, pin_memory=True, drop_last=True)
     val_loader = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False, num_workers=4, pin_memory=True, drop_last=False)
     class_names = train_dataset.get_class_names()
+    logger.info(f"Train loader: {len(train_loader)} batches. Validation loader: {len(val_loader)} batches.")
+
 
     # --- Model ---
     logger.info(f"Initializing model: {config['model_name']}")
@@ -196,39 +223,42 @@ def run_training_session(config: dict) -> float:
         if config["warmup_epochs"] > 0: warmup = LinearLR(optimizer, start_factor=config.get("warmup_lr_init_factor", 0.1), total_iters=config["warmup_epochs"])
         else: warmup = None
         sched_type = config["scheduler"].lower(); main_sched = None
-        if sched_type == "cosineannealingwarmrestarts": main_sched = CosineAnnealingWarmRestarts(optimizer, T_0=config["cosine_t_0"], T_mult=config["cosine_t_mult"], eta_min=config["eta_min"]); logger.info("Using CosineAnnealingWarmRestarts.")
-        elif sched_type == "reducelronplateau": lr_reducer = ReduceLROnPlateau(optimizer, mode='max', factor=config["reducelr_factor"], patience=config["reducelr_patience"], verbose=False); logger.info("Using ReduceLROnPlateau.") # verbose=False for HPO
-        
+        if sched_type == "cosineannealingwarmrestarts": main_sched = CosineAnnealingWarmRestarts(optimizer, T_0=config["cosine_t_0"], T_mult=config["cosine_t_mult"], eta_min=config["eta_min"]); logger.info("Using CosineAnnealingWarmRestarts scheduler.")
+        elif sched_type == "reducelronplateau": lr_reducer = ReduceLROnPlateau(optimizer, mode='max', factor=config["reducelr_factor"], patience=config["reducelr_patience"], verbose=False); logger.info("Using ReduceLROnPlateau scheduler.")
+        else: logger.warning(f"Unsupported scheduler type: {config['scheduler']}.")
         schedulers_to_combine = [s for s in [warmup, main_sched] if s is not None]
         if len(schedulers_to_combine) > 1: scheduler = SequentialLR(optimizer, schedulers=schedulers_to_combine, milestones=[config["warmup_epochs"]]); logger.info("Combined Warmup+Scheduler.")
         elif len(schedulers_to_combine) == 1: scheduler = schedulers_to_combine[0]
-        elif lr_reducer is None: logger.info("No valid main scheduler.")
+        elif lr_reducer is None: logger.info("No valid scheduler configured.")
 
     scaler = GradScaler(enabled=config["amp_enabled"])
     trainer = Finetuner(model=model, optimizer=optimizer, criterion=criterion, device=device, scaler=scaler, scheduler=scheduler, accumulation_steps=config["accumulation_steps"], clip_grad_norm=config["clip_grad_norm"], augmentations=augmentations, num_classes=config["num_classes"])
 
     # --- Training Loop ---
-    best_val_metric = 0.0
-    metric_to_monitor = config.get("metric_to_monitor", 'f1_weighted') # Use F1 as default for HPO
+    best_val_metric = -1.0 # Initialize lower than any possible metric
+    metric_to_monitor = config.get("metric_to_monitor", 'f1_weighted') 
     patience_counter = 0
     early_stopping_patience = config.get("early_stopping_patience", float('inf'))
 
-    logger.info(f"Starting training loop for {config['epochs']} epochs... Monitoring: {metric_to_monitor}")
+    logger.info(f"Starting training loop for {config['epochs']} epochs... Monitoring: {metric_to_monitor}") 
+    
     for epoch in range(1, config["epochs"] + 1):
         avg_train_loss = trainer.train_one_epoch(train_loader, epoch, config["epochs"])
         
+        # --- Validation and Checkpointing ---
         if epoch % config["evaluate_every_n_epochs"] == 0:
             avg_val_loss, val_metrics = trainer.validate_one_epoch(val_loader, class_names=class_names)
             current_val_metric = val_metrics.get(metric_to_monitor, 0.0)
-            if lr_reducer: lr_reducer.step(current_val_metric)
             
-            # Log metrics for HPO tracking if needed (Optuna does this automatically via return value)
-            logger.info(f"Epoch {epoch} Val Metrics: {val_metrics}") 
-            
+            # Ensure checkpoint dir exists
+            best_model_dir = os.path.dirname(config["best_model_path"])
+            if best_model_dir and not os.path.exists(best_model_dir): os.makedirs(best_model_dir)
+
+            if lr_reducer: lr_reducer.step(current_val_metric) # Step reducer based on metric
+
             if current_val_metric > best_val_metric:
                 best_val_metric = current_val_metric
-                # Optionally save best model during HPO, or just rely on final metric
-                # trainer.save_model_checkpoint(config["best_model_path"]) 
+                trainer.save_model_checkpoint(config["best_model_path"]) 
                 logger.info(f"Epoch {epoch}: New best val {metric_to_monitor}: {best_val_metric:.4f}")
                 patience_counter = 0
             else:
@@ -239,13 +269,15 @@ def run_training_session(config: dict) -> float:
                 logger.info(f"Early stopping triggered at epoch {epoch}.")
                 break
         
-        if scheduler and not lr_reducer: scheduler.step()
+        # Step other schedulers (if they are not ReduceLROnPlateau)
+        if scheduler and not lr_reducer: 
+            scheduler.step()
 
     logger.info(f"Training finished. Best validation {metric_to_monitor}: {best_val_metric:.4f}")
-    # Optionally save final model
-    # trainer.save_model_checkpoint(config["final_model_path"])
-    
-    # Return the metric HPO should optimize
+    # Ensure final model save dir exists
+    final_model_dir = os.path.dirname(config["final_model_path"])
+    if final_model_dir and not os.path.exists(final_model_dir): os.makedirs(final_model_dir)
+    trainer.save_model_checkpoint(config["final_model_path"])
     return best_val_metric 
 
 
@@ -254,29 +286,24 @@ if __name__ == "__main__":
     args = parse_args()
     config = load_config_yaml(args.config)
     
-    # --- Setup Logging ---
-    # Setup root logger here before anything else logs
     log_file = config.get("log_file_finetune", "finetune.log")
     log_dir = config.get("log_dir", "logs")
     setup_logging(log_file_name=log_file, log_dir=log_dir, log_level=logging.INFO, logger_name=None) 
     logger = logging.getLogger(__name__)
 
-    # Check if HPO is enabled (e.g., via config or command line)
-    # For now, just run a single training session. HPO script will call run_training_session.
+    # HPO logic / Single run logic
     if config.get("hpo_enabled", False):
         logger.warning("HPO is enabled in config, but this script runs a single train session.")
         logger.warning("Please run hpo.py for hyperparameter optimization.")
-        # Optionally, you could run HPO directly here if hpo.py doesn't exist yet
-        # import optuna
-        # define objective(trial): ... calls run_training_session ...
-        # study = optuna.create_study(...)
-        # study.optimize(objective, n_trials=...)
+        # Optional: Placeholder if you want this script to trigger HPO eventually
+        # run_hpo(config) 
     else:
         try:
-             # Override config with command-line args if provided (for single runs/debug)
-            if args.lr is not None: config['learning_rate'] = args.lr
-            if args.wd is not None: config['weight_decay'] = args.wd
-            if args.ls is not None: config['loss_label_smoothing'] = args.ls
+            if args.lr is not None: config['learning_rate'] = args.lr; logger.info(f"Overriding LR: {args.lr}")
+            if args.wd is not None: config['weight_decay'] = args.wd; logger.info(f"Overriding WD: {args.wd}")
+            if args.ls is not None: config['loss_label_smoothing'] = args.ls; logger.info(f"Overriding LS: {args.ls}")
+            if args.epochs is not None: config['epochs'] = args.epochs; logger.info(f"Overriding Epochs: {args.epochs}")
+            if args.batch_size is not None: config['batch_size'] = args.batch_size; logger.info(f"Overriding Batch Size: {args.batch_size}")
             
             run_training_session(config)
 
