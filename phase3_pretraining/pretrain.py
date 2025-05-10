@@ -3,151 +3,283 @@ import torch
 import os
 import sys
 import logging
+import numpy as np
+from torch.utils.data import DataLoader
+import time
+# import math # Not directly used here, but trainer might need it
 
 # --- Path Setup ---
-# Goal: Allow this script to be run directly, and also allow imports from sibling packages (like phase2_model)
-# when the ultimate project root (cvpr25) is implicitly or explicitly in sys.path.
+try:
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    package_root = os.path.dirname(script_dir) # Should be phase3_pretraining
+    # project_root = os.path.dirname(package_root) # Should be parent of phase3_pretraining
+    # For imports, ensure package_root is enough if structure is phase3_pretraining/../
+    # sys.path is usually for finding top-level packages.
+    # If 'phase3_pretraining' is a package itself, and you run scripts from within it
+    # or from its parent, Python's import mechanism should handle it.
+    # Let's assume 'phase3_pretraining' is in PYTHONPATH or you run from its parent.
+    if package_root not in sys.path:
+        sys.path.insert(0, package_root) # Add phase3_pretraining to path
+    # if project_root not in sys.path: # Adding project root is also common
+    #    sys.path.insert(0, project_root)
 
-# Get the directory of the current script (phase3_pretraining/pretrain.py)
-script_dir = os.path.dirname(os.path.abspath(__file__)) # .../phase3_pretraining
+except Exception as e:
+    print(f"ERROR during path setup in pretrain.py: {e}"); sys.exit(1)
 
-# Get the parent of the script_dir (this should be .../phase3_pretraining if script is pretrain.py)
-# If script is pretrain.py, then script_dir is '.../phase3_pretraining'.
-# The package name is 'phase3_pretraining'.
-# If we add the parent of 'phase3_pretraining' (i.e., 'cvpr25') to sys.path,
-# then we can do 'from phase3_pretraining.config ...'
+# --- Project Imports ---
+try:
+    from phase3_pretraining.config import config
+    from phase3_pretraining.utils.logging_setup import setup_logging # MODIFIED
+    from phase3_pretraining.utils.augmentations import SimCLRAugmentation
+    from phase3_pretraining.utils.losses import InfoNCELoss
+    from phase3_pretraining.dataset import SARCLD2024Dataset
+    from phase3_pretraining.models.hvt_wrapper import HVTForPretraining
+    from phase3_pretraining.pretrain.trainer import Pretrainer
+except ImportError as e:
+    # Try to provide more context on ImportError
+    import traceback
+    print(f"CRITICAL ERROR: Failed to import necessary modules for pretrain.py: {e}")
+    print("Traceback:\n", traceback.format_exc())
+    print("Current sys.path:", sys.path)
+    print("Current working directory:", os.getcwd())
+    sys.exit(1)
 
-package_root = script_dir # .../phase3_pretraining
-project_root = os.path.dirname(package_root) # .../cvpr25 (parent of phase3_pretraining)
+# --- Setup Logging ---
+log_file_name = config.get("log_file_pretrain", "default_pretrain.log")
+log_dir_from_config = config.get("log_dir", "logs") # relative to package_root
+# Construct absolute log_dir_path based on package_root
+log_dir_path = os.path.join(package_root, log_dir_from_config)
+os.makedirs(log_dir_path, exist_ok=True)
 
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-    print(f"DEBUG: Added project root to sys.path: {project_root}")
+# Configure logging: DEBUG to file, INFO to console
+# Ensure this is called only once for the root logger
+if not logging.getLogger().hasHandlers(): # Check if root logger already has handlers
+    setup_logging(
+        log_file_name=log_file_name,
+        log_dir=log_dir_path,
+        log_level_file=logging.DEBUG,    # Detailed logs to file
+        log_level_console=logging.INFO   # Minimal logs to console
+    )
+    # print(f"DEBUG (pretrain.py): Root logger configured. Log level File: DEBUG, Console: INFO. File: {os.path.join(log_dir_path, log_file_name)}")
+# else:
+    # print(f"DEBUG (pretrain.py): Root logger seems already configured.")
 
-# Now, standard absolute imports from the project root should work.
-# For example, 'from phase3_pretraining.config import ...'
-# and 'from phase2_model.models.hvt import ...'
+logger = logging.getLogger(__name__) # Get logger for the current module
 
-# --- Config and Util Imports ---
-# These should now work because 'project_root' (e.g., /path/to/cvpr25) is in sys.path,
-# allowing Python to find the 'phase3_pretraining' package within it.
-from phase3_pretraining.config import (
-    DEVICE, PRETRAIN_IMAGE_RESOLUTIONS, PRETRAIN_EPOCHS, PRETRAIN_BATCH_SIZE,
-    DATASET_BASE_PATH, ORIGINAL_DATASET_NAME, AUGMENTED_DATASET_NAME, TRAIN_SPLIT_RATIO,
-    TEMPERATURE, EVALUATE_EVERY_N_EPOCHS, LOG_FILE_PRETRAIN, RANDOM_SEED # Added RANDOM_SEED
-)
-from phase3_pretraining.utils.logging_setup import setup_logging
-from phase3_pretraining.utils.augmentations import SimCLRAugmentation
-from phase3_pretraining.utils.losses import InfoNCELoss
-from phase3_pretraining.dataset import SARCLD2024Dataset # This uses RANDOM_SEED from config internally
-from phase3_pretraining.models.hvt_wrapper import HVTForPretraining
-from phase3_pretraining.pretrain.trainer import Pretrainer # Correct path to trainer
-
-from torch.utils.data import DataLoader
-
-# Setup main logger for this script
-# Make sure RANDOM_SEED is available for SARCLD2024Dataset via its config import
-# In phase3_pretraining/dataset.py, change:
-# from .config import RANDOM_SEED as config_RANDOM_SEED
-# to:
-# from phase3_pretraining.config import RANDOM_SEED as config_RANDOM_SEED
-# This is because dataset.py might be imported when phase3_pretraining is not yet fully a package in sys.path context.
-# The sys.path modification at the top of *this* script (pretrain.py) makes it work when this script is run.
-
-# Apply RANDOM_SEED for torch and numpy at the start of the main script
+# --- Apply Seed and PyTorch Optimizations ---
+# (Keep this section as is)
+RANDOM_SEED = config['seed']
 torch.manual_seed(RANDOM_SEED)
-import numpy as np
 np.random.seed(RANDOM_SEED)
-
-
-setup_logging(log_file_name=LOG_FILE_PRETRAIN, logger_name=None) # None for root logger
-logger = logging.getLogger(__name__)
+logger.info(f"Global random seed set to: {RANDOM_SEED}") # Will appear on console
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+    if config.get("cudnn_benchmark", False):
+        torch.backends.cudnn.benchmark = True
+        logger.info("torch.backends.cudnn.benchmark = True") # Console
+    matmul_precision = config.get("matmul_precision")
+    if matmul_precision and hasattr(torch, 'set_float32_matmul_precision'):
+        try:
+            torch.set_float32_matmul_precision(matmul_precision)
+            logger.info(f"torch.set_float32_matmul_precision('{matmul_precision}')") # Console
+        except Exception as e:
+            logger.warning(f"Failed to set matmul_precision '{matmul_precision}': {e}") # Console
+    elif matmul_precision:
+        logger.warning(f"Matmul_precision '{matmul_precision}' configured, but torch.set_float32_matmul_precision not available.")
+else:
+    logger.warning("CUDA not available. PyTorch optimizations for CUDA will not be applied.") # Console
 
 
 def main_pretrain():
-    logger.info(f"Using device: {DEVICE}")
-    if DEVICE == "cuda":
-        logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
-        if "PYTORCH_CUDA_ALLOC_CONF" not in os.environ: # Set only if not already set
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    device = config['device']
+    if device == 'cuda' and not torch.cuda.is_available():
+        device = 'cpu'
+        logger.warning("CUDA specified but not available. Switched to CPU.") # Console
+    logger.info(f"Using device: {device}") # Console
+    if device == 'cuda':
+        logger.info(f"CUDA Device Name: {torch.cuda.get_device_name(0)}); CUDA Version: {torch.version.cuda}") # Console
 
-    img_size = PRETRAIN_IMAGE_RESOLUTIONS[0] 
-    logger.info(f"Selected image size for pre-training: {img_size}")
+    img_size = tuple(config['pretrain_img_size'])
+    logger.info(f"Selected image size for pre-training: {img_size}") # Console
 
-    logger.info("Initializing datasets for pre-training and linear probing...")
-    pretrain_dataset = SARCLD2024Dataset(
-        root_dir=DATASET_BASE_PATH, 
-        img_size=img_size, 
-        split="train", 
-        train_split_ratio=TRAIN_SPLIT_RATIO, 
-        normalize_for_model=False, 
-        original_dataset_name=ORIGINAL_DATASET_NAME,
-        augmented_dataset_name=AUGMENTED_DATASET_NAME
-    )
-    probe_train_dataset = SARCLD2024Dataset(
-        root_dir=DATASET_BASE_PATH, img_size=img_size, split="train", 
-        train_split_ratio=TRAIN_SPLIT_RATIO, normalize_for_model=True
-    ) 
-    probe_val_dataset = SARCLD2024Dataset(
-        root_dir=DATASET_BASE_PATH, img_size=img_size, split="val", 
-        train_split_ratio=TRAIN_SPLIT_RATIO, normalize_for_model=True
-    )
-
-    pretrain_loader = DataLoader(
-        pretrain_dataset, batch_size=PRETRAIN_BATCH_SIZE, shuffle=True,
-        num_workers=4, pin_memory=True, drop_last=True, persistent_workers=(True if DEVICE=='cuda' and int(torch.__version__.split('.')[1]) >= 7 else False) # persistent_workers needs PyTorch 1.7+
-    )
-    probe_train_loader = DataLoader(
-        probe_train_dataset, batch_size=PRETRAIN_BATCH_SIZE, shuffle=True,
-        num_workers=4, pin_memory=True, drop_last=False
-    )
-    probe_val_loader = DataLoader(
-        probe_val_dataset, batch_size=PRETRAIN_BATCH_SIZE, shuffle=False,
-        num_workers=4, pin_memory=True, drop_last=False
-    )
-    logger.info(f"Pretrain DataLoader: {len(pretrain_loader)} batches. "
-                f"Probe Train: {len(probe_train_loader)} batches. Probe Val: {len(probe_val_loader)} batches.")
-
-    logger.info("Initializing model, augmentations, and loss function...")
-    model = HVTForPretraining(img_size=img_size) 
-    
-    augmentations = SimCLRAugmentation(img_size=img_size)
-    loss_fn = InfoNCELoss(temperature=TEMPERATURE)
-
-    logger.info("Initializing Pretrainer...")
-    pretrainer_instance = Pretrainer(
-        model=model,
-        augmentations=augmentations,
-        loss_fn=loss_fn,
-        device=DEVICE,
-        train_loader_for_probe=probe_train_loader,
-        val_loader_for_probe=probe_val_loader
-    )
-
-    logger.info(f"Starting pre-training for {PRETRAIN_EPOCHS} epochs.")
+    logger.info("Initializing datasets...") # Console
+    dataset_kwargs = {
+        "root_dir": config['data_root'], "img_size": img_size,
+        "train_split_ratio": config['train_split_ratio'],
+        "original_dataset_name": config['original_dataset_name'],
+        "augmented_dataset_name": config['augmented_dataset_name'],
+        "random_seed": config['seed'], "use_spectral": False,
+        "spectral_channels": config['hvt_spectral_channels']
+    }
     try:
-        for epoch in range(1, PRETRAIN_EPOCHS + 1):
-            avg_loss = pretrainer_instance.train_one_epoch(pretrain_loader, epoch, PRETRAIN_EPOCHS)
-            
-            if epoch % EVALUATE_EVERY_N_EPOCHS == 0 or epoch == PRETRAIN_EPOCHS:
-                pretrainer_instance.evaluate_linear_probe(current_epoch=epoch)
-                pretrainer_instance.save_checkpoint(epoch=epoch)
-            
-            if torch.cuda.is_available():
-                logger.debug(f"CUDA Mem Summary after epoch {epoch}: "
-                            f"Allocated: {torch.cuda.memory_allocated(0)/1024**2:.2f} MB, "
-                            f"Reserved: {torch.cuda.memory_reserved(0)/1024**2:.2f} MB")
-            
-    except KeyboardInterrupt:
-        logger.warning("Pre-training interrupted by user.")
+        # Dataset __init__ logs at INFO/DEBUG level.
+        # INFO messages from dataset __init__ (like "Scanning...") will appear on console.
+        pretrain_dataset = SARCLD2024Dataset(**dataset_kwargs, split="train", normalize_for_model=False)
+        
+        # --- Manual __getitem__(0) test ---
+        if len(pretrain_dataset) > 0:
+            logger.debug("Manually testing pretrain_dataset[0]...") # DEBUG - Not on console
+            try:
+                test_rgb, test_label = pretrain_dataset[0] # __getitem__ will log verbosely for first few calls (DEBUG)
+                logger.debug(f"Manual pretrain_dataset[0] SUCCESS. RGB shape: {test_rgb.shape}, Label: {test_label}") # DEBUG
+            except Exception as e_getitem_test:
+                logger.error(f"Manual pretrain_dataset[0] FAILED: {e_getitem_test}", exc_info=True) # ERROR - Console
+                sys.exit("Exiting due to manual __getitem__(0) test failure.")
+        else:
+            logger.error("Pretrain dataset is empty after initialization. Cannot proceed.") # ERROR - Console
+            sys.exit("Exiting due to empty pretrain dataset.")
+        # --- End manual __getitem__(0) test ---
+
+        probe_train_dataset = SARCLD2024Dataset(**dataset_kwargs, split="train", normalize_for_model=True)
+        probe_val_dataset = SARCLD2024Dataset(**dataset_kwargs, split="val", normalize_for_model=True)
     except Exception as e:
-        logger.exception(f"An error occurred during pre-training: {e}")
+        logger.error(f"Failed to initialize datasets: {e}", exc_info=True); sys.exit(1) # ERROR - Console
+
+    logger.info(f"Pretrain dataset size: {len(pretrain_dataset)}") # Console
+    logger.info(f"Probe train dataset size: {len(probe_train_dataset)}, Probe val dataset size: {len(probe_val_dataset)}") # Console
+
+    num_workers_val = config.get('num_workers', 0)
+    # The warning about num_workers != 0 will still appear on console if triggered.
+    if num_workers_val != 0:
+        logger.warning(f"NUM_WORKERS IS NOT 0 (it's {num_workers_val}). For current debugging, consider setting 'num_workers': 0 in config.py for simpler debugging trace.")
+
+    prefetch_factor_val = config.get('prefetch_factor', 2) if num_workers_val > 0 else None
+    batch_size_pretrain = config['pretrain_batch_size']
+    batch_size_probe = config.get('probe_batch_size', batch_size_pretrain)
+    use_persistent_workers = (device == 'cuda' and num_workers_val > 0 and torch.cuda.is_available())
+
+    common_loader_args = {"num_workers": num_workers_val, "pin_memory": (device == 'cuda'),
+                          "persistent_workers": use_persistent_workers}
+    if prefetch_factor_val is not None: # Only add if num_workers > 0
+        common_loader_args["prefetch_factor"] = prefetch_factor_val
+    if num_workers_val == 0: # Explicitly set to False for num_workers = 0
+        common_loader_args["persistent_workers"] = False
+        common_loader_args.pop("prefetch_factor", None)
+
+
+    try:
+        pretrain_loader = DataLoader(pretrain_dataset, batch_size=batch_size_pretrain, shuffle=True, drop_last=True, **common_loader_args)
+        probe_train_loader = DataLoader(probe_train_dataset, batch_size=batch_size_probe, shuffle=True, drop_last=False, **common_loader_args)
+        probe_val_loader = DataLoader(probe_val_dataset, batch_size=batch_size_probe, shuffle=False, drop_last=False, **common_loader_args)
+    except Exception as e:
+        logger.error(f"Failed to create DataLoaders: {e}", exc_info=True); sys.exit(1) # ERROR - Console
+    
+    logger.info(f"Pretrain DataLoader: {len(pretrain_loader)} batches of size {batch_size_pretrain}. num_workers={num_workers_val}, prefetch={prefetch_factor_val if num_workers_val > 0 else 'N/A'}, persistent={common_loader_args['persistent_workers']}") # Console
+
+    logger.info("Initializing HVTForPretraining model...") # Console
+    # HVTWrapper __init__ logs at INFO level - these will appear on console
+    model_to_train = HVTForPretraining(img_size=img_size).to(device)
+
+    if config.get("enable_torch_compile", False) and hasattr(torch, 'compile'):
+        compile_mode = config.get("torch_compile_mode", "reduce-overhead")
+        logger.info(f"Attempting to compile model with torch.compile(mode='{compile_mode}')...") # Console
+        try:
+            model_to_train = torch.compile(model_to_train, mode=compile_mode)
+            logger.info("Model compiled.") # Console
+        except Exception as e:
+            logger.warning(f"torch.compile() failed: {e}. No compilation.", exc_info=False) # exc_info=False for console
+            logger.debug("torch.compile() failure details:", exc_info=True) # Full details to file
+    else:
+        logger.info("torch.compile() not enabled or not available.") # Console
+
+    augmentations = SimCLRAugmentation(img_size=img_size, s=config.get("simclr_s",1.0), p_grayscale=config.get("simclr_p_grayscale",0.2), p_gaussian_blur=config.get("simclr_p_gaussian_blur",0.5))
+    loss_fn = InfoNCELoss(temperature=config['temperature'])
+    
+    logger.info("Initializing Pretrainer...") # Console
+    # Pretrainer __init__ logs at INFO level - these will appear on console
+    try:
+        pretrainer_instance = Pretrainer(model=model_to_train, augmentations=augmentations, loss_fn=loss_fn, device=device,
+                                         train_loader_for_probe=probe_train_loader, val_loader_for_probe=probe_val_loader,
+                                         h100_optim_config=config)
+    except Exception as e:
+        logger.error(f"Failed to initialize Pretrainer: {e}", exc_info=True); sys.exit(1) # ERROR - Console
+
+    pretrain_epochs = config['pretrain_epochs']
+    evaluate_every_n_epochs = config['evaluate_every_n_epochs']
+    save_every_n_epochs = config.get('save_every_n_epochs', 20)
+    logger.info(f"Starting pre-training for {pretrain_epochs} epochs.") # Console
+    start_epoch = 1
+    best_probe_acc = -1.0
+    last_completed_epoch = 0
+
+    try:
+        batches_per_epoch_pretrain = len(pretrain_loader)
+    except TypeError: # Handles cases where DataLoader has no __len__ (e.g. IterableDataset without explicit length)
+        logger.warning("Could not get len(pretrain_loader) directly. Will iterate without a fixed batch count per epoch for tqdm.")
+        batches_per_epoch_pretrain = None # Or estimate if possible, or handle in trainer
+    except Exception as e:
+        logger.error(f"Could not get len(pretrain_loader): {e}", exc_info=True); sys.exit(1)
+
+    if batches_per_epoch_pretrain == 0 and len(pretrain_dataset) > 0:
+        logger.error("Pretrain DataLoader empty but dataset not. Check DataLoader batch_size and drop_last settings, or dataset integrity."); sys.exit(1)
+    elif len(pretrain_dataset) == 0:
+        logger.error("Pretrain dataset empty. Cannot start training."); sys.exit(1)
+
+    try:
+        for epoch in range(start_epoch, pretrain_epochs + 1):
+            last_completed_epoch = epoch -1 # In case of interruption within the epoch
+            epoch_start_time = time.time()
+            
+            # train_one_epoch logs its own INFO messages for start/end/avg_loss, which will go to console.
+            # tqdm progress bar will also be on console.
+            # Detailed per-batch logs from train_one_epoch are DEBUG, so only in file.
+            avg_loss = pretrainer_instance.train_one_epoch(pretrain_loader, epoch, pretrain_epochs, batches_per_epoch=batches_per_epoch_pretrain)
+            
+            epoch_duration = time.time() - epoch_start_time
+            samples_per_sec = (batches_per_epoch_pretrain * batch_size_pretrain) / epoch_duration if epoch_duration > 0 and batches_per_epoch_pretrain is not None else 0
+            
+            # This is the main epoch summary for console
+            logger.info(
+                f"SSL Epoch {epoch}/{pretrain_epochs} COMPLETED. "
+                f"Duration: {epoch_duration:.2f}s. "
+                f"Samples/sec: {samples_per_sec:.2f}. "
+                f"Avg Loss: {avg_loss:.4f}. "
+                f"LR: {pretrainer_instance.optimizer.param_groups[0]['lr']:.2e}"
+            )
+            
+            probe_accuracy = -1.0 # Reset for this epoch's potential evaluation
+            if epoch % evaluate_every_n_epochs == 0 or epoch == pretrain_epochs:
+                if len(probe_val_loader.dataset) > 0 and len(probe_train_loader.dataset) > 0:
+                    probe_start_time = time.time()
+                    # evaluate_linear_probe logs its own INFO messages, which will go to console.
+                    probe_accuracy = pretrainer_instance.evaluate_linear_probe(current_epoch=epoch)
+                    probe_duration = time.time() - probe_start_time
+                    logger.info(f"Linear Probe (after SSL E{epoch}) duration: {probe_duration:.2f}s. Accuracy: {probe_accuracy:.2f}%") # Console
+                    if probe_accuracy > best_probe_acc:
+                        best_probe_acc = probe_accuracy
+                        logger.info(f"New best probe acc: {best_probe_acc:.2f}% (SSL E{epoch}). Saving best model checkpoint.") # Console
+                        pretrainer_instance.save_checkpoint(epoch=f"{epoch}_bestprobe", best_metric=best_probe_acc, file_name=f"{config.get('model_name','hvt').lower()}_pretrain_best_probe.pth")
+                else:
+                    logger.warning(f"Skipping probe evaluation at SSL E{epoch}: one or both probe datasets are empty.") # Console
+            
+            if epoch % save_every_n_epochs == 0 or epoch == pretrain_epochs:
+                 # save_checkpoint logs INFO messages which will go to console
+                 pretrainer_instance.save_checkpoint(epoch=epoch, best_metric=probe_accuracy if probe_accuracy != -1.0 else best_probe_acc) # Save current or best known probe acc
+            
+            last_completed_epoch = epoch # Mark epoch as fully completed
+
+            if torch.cuda.is_available():
+                # CUDA memory log is DEBUG - only to file
+                logger.debug(
+                    f"CUDA Mem E{epoch}: "
+                    f"Alloc: {torch.cuda.memory_allocated(0)/1024**2:.1f}MB "
+                    f"Reserved: {torch.cuda.memory_reserved(0)/1024**2:.1f}MB "
+                    f"MaxAlloc: {torch.cuda.max_memory_allocated(0)/1024**2:.1f}MB "
+                    f"MaxReserved: {torch.cuda.max_memory_reserved(0)/1024**2:.1f}MB"
+                )
+
+    except KeyboardInterrupt:
+        logger.warning(f"Pre-training interrupted by user at epoch {last_completed_epoch+1}.") # Console
+    except Exception as e:
+        logger.exception(f"Critical error during pre-training at epoch {last_completed_epoch+1}: {e}") # Console + Full Traceback to file
+        sys.exit(1)
     finally:
-        logger.info("Pre-training finished or was interrupted.")
-        if 'pretrainer_instance' in locals(): # Ensure pretrainer_instance was initialized
-            pretrainer_instance.save_checkpoint(epoch="final")
+        logger.info(f"Pre-training finished or interrupted after {last_completed_epoch} completed epochs.") # Console
+        if 'pretrainer_instance' in locals() and pretrainer_instance is not None:
+            final_save_name = config.get("pretrain_final_checkpoint_name", f"{config.get('model_name','hvt').lower()}_pretrain_epoch_final.pth")
+            # save_checkpoint logs INFO messages which will go to console
+            pretrainer_instance.save_checkpoint(epoch=last_completed_epoch if last_completed_epoch > 0 else 'final_interrupted', best_metric=best_probe_acc, file_name=final_save_name)
+            logger.info(f"Final pre-trained model saved. Best probe accuracy during run: {best_probe_acc:.2f}%") # Console
 
 if __name__ == "__main__":
     main_pretrain()

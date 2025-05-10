@@ -10,7 +10,7 @@ class DiseaseFocusedCrossAttention(nn.Module):
     Disease-Focused Cross-Attention (DFCA) for multi-modal fusion of RGB and spectral features.
     Uses spectral features (potentially enhanced by a disease prior) to modulate RGB features.
     """
-    def __init__(self, embed_dim: int, num_heads: int, 
+    def __init__(self, embed_dim: int, num_heads: int,
                  dropout_rate: float = 0.1, use_disease_mask: bool = True):
         """
         Args:
@@ -34,14 +34,14 @@ class DiseaseFocusedCrossAttention(nn.Module):
             self.disease_mask_param = nn.Parameter(torch.zeros(1, 1, embed_dim)) # Initialize to zeros
             # Consider nn.init.xavier_uniform_(self.disease_mask_param) or similar if starting non-zero
             logger.info("DFCA: Initialized with learnable disease mask parameter.")
-        
+
         # Cross-attention module: RGB is query, Spectral is key/value
         # batch_first=False because HVT typically outputs (seq_len, batch, embed_dim) before this
         self.cross_attention = nn.MultiheadAttention(embed_dim, num_heads, dropout=dropout_rate, batch_first=False)
-        
+
         self.norm1 = nn.LayerNorm(embed_dim)
         self.dropout1 = nn.Dropout(dropout_rate)
-        
+
         # Feed-forward network (MLP)
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, embed_dim * 4), # Common MLP ratio of 4
@@ -51,7 +51,7 @@ class DiseaseFocusedCrossAttention(nn.Module):
         )
         self.norm2 = nn.LayerNorm(embed_dim)
         self.dropout2 = nn.Dropout(dropout_rate) # Dropout after FFN output / before residual
-        
+
         logger.info(f"DFCA initialized: embed_dim={embed_dim}, num_heads={num_heads}, dropout={dropout_rate}")
 
     def forward(self, rgb_features: torch.Tensor, spectral_features: torch.Tensor) -> torch.Tensor:
@@ -59,7 +59,7 @@ class DiseaseFocusedCrossAttention(nn.Module):
         Args:
             rgb_features (torch.Tensor): RGB features [seq_len, batch_size, embed_dim].
             spectral_features (torch.Tensor): Spectral features [seq_len, batch_size, embed_dim].
-        
+
         Returns:
             torch.Tensor: Fused features [seq_len, batch_size, embed_dim].
         """
@@ -81,19 +81,19 @@ class DiseaseFocusedCrossAttention(nn.Module):
             value=spectral_qkv
         )
         # logger.debug(f"DFCA attention output shape: {attn_output.shape}")
-        
+
         # First residual connection & normalization (Post-LN style)
         # x = query + dropout(attention_output)
         # x = norm(x)
         fused_features = rgb_features + self.dropout1(attn_output)
         fused_features = self.norm1(fused_features)
-        
+
         # Feed-forward network
         ffn_output = self.ffn(fused_features)
-        
+
         # Second residual connection & normalization
         fused_features = fused_features + self.dropout2(ffn_output)
         fused_features = self.norm2(fused_features)
-        
+
         # logger.debug(f"DFCA output shape: {fused_features.shape}")
         return fused_features

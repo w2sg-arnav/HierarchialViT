@@ -1,28 +1,27 @@
 # phase2_model/__init__.py
-
-# This file makes 'phase2_model' a Python package.
-# We expose the core model classes using relative imports from the 'models' sub-directory.
-# REMOVED direct imports from 'config'. Config values should be passed during model instantiation.
-
-import logging # Import logging for the warning message
+import logging
 
 logger = logging.getLogger(__name__)
 
-try:
-    # Assuming baseline.py, hvt.py etc. are in phase2_model/models/
-    from .models.baseline import InceptionV3Baseline
-    from .models.hvt import DiseaseAwareHVT 
-    # Keep the helper create function if needed/used elsewhere
-    # from .models.hvt import create_disease_aware_hvt_from_config 
-    from .models.dfca import DiseaseFocusedCrossAttention
+# Define __all__ outside the try block to ensure it's always defined
+__all__ = []
 
+try:
+    # Relative imports from the 'models' subdirectory within 'phase2_model'
+    from .models.baseline import InceptionV3Baseline
+    from .models.dfca import DiseaseFocusedCrossAttention
+    from .models.hvt import DiseaseAwareHVT 
+    # from .models.hvt import create_disease_aware_hvt_from_config # Expose if used by other modules
+
+    # Populate __all__ only if imports succeed
     __all__ = [
         "InceptionV3Baseline",
+        "DiseaseFocusedCrossAttention",
         "DiseaseAwareHVT",
-        # "create_disease_aware_hvt_from_config", # Expose if needed
-        "DiseaseFocusedCrossAttention"
+        # "create_disease_aware_hvt_from_config",
     ]
 except ImportError as e:
-    # This might happen if the structure is different or due to circular imports.
-    logger.warning(f"Warning: Could not perform standard imports in phase2_model/__init__.py. Structure might be unexpected. Error: {e}")
-    __all__ = []
+    logger.warning(f"Warning in phase2_model/__init__.py: Could not perform standard model imports "
+                   f"from submodules (e.g., .models.baseline). Check file structure and imports. Error: {e}")
+except Exception as e: # Catch any other potential errors during import
+    logger.error(f"Unexpected error in phase2_model/__init__.py: {e}", exc_info=True)

@@ -1,0 +1,162 @@
+2025-05-09 06:05:35,088 - root - INFO - Root logging setup to /teamspace/studios/this_studio/cvpr25/logs/phase3_pretrain_hvt_xl.log
+2025-05-09 06:05:35,090 - __main__ - INFO - Global random seed set to: 42
+2025-05-09 06:05:35,090 - __main__ - INFO - Using device: cuda
+2025-05-09 06:05:35,121 - __main__ - INFO - CUDA Device Name: Tesla T4
+2025-05-09 06:05:35,121 - __main__ - INFO - CUDA Version: 12.1
+2025-05-09 06:05:35,121 - __main__ - INFO - Selected image size for pre-training: (448, 448)
+2025-05-09 06:05:35,121 - __main__ - INFO - Initializing datasets for pre-training and linear probing...
+2025-05-09 06:05:35,122 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: train, img_size: (448, 448)
+2025-05-09 06:05:35,122 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:05:35,438 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:05:36,522 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:05:36,528 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:05:36,528 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:05:36,528 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:05:36,528 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:05:36,528 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:05:36,529 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:05:36,529 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:05:36,529 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:05:36,530 - phase3_pretraining.dataset - INFO - Dataset split 'train' size: 8680 samples.
+2025-05-09 06:05:36,531 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: train, img_size: (448, 448)
+2025-05-09 06:05:36,531 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:05:36,657 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:05:36,980 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:05:36,983 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:05:36,984 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:05:36,985 - phase3_pretraining.dataset - INFO - Dataset split 'train' size: 8680 samples.
+2025-05-09 06:05:36,985 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: val, img_size: (448, 448)
+2025-05-09 06:05:36,985 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:05:37,069 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:05:37,370 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:05:37,373 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:05:37,373 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:05:37,374 - phase3_pretraining.dataset - INFO - Dataset split 'val' size: 457 samples.
+2025-05-09 06:05:37,375 - __main__ - INFO - Pretrain dataset size: 8680
+2025-05-09 06:05:37,375 - __main__ - INFO - Probe train dataset size: 8680, Probe val dataset size: 457
+2025-05-09 06:05:37,375 - __main__ - INFO - Pretrain DataLoader: 542 batches of size 16. Probe Train: 543, Probe Val: 29 batches of size 16.
+2025-05-09 06:05:37,376 - __main__ - INFO - Initializing HVTForPretraining model, augmentations, and loss function...
+2025-05-09 06:05:37,376 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Attempting to create HVTBackbone using params from phase3_pretraining.config via phase2_model's config loading mechanism.
+2025-05-09 06:05:37,376 - phase2_model.models.hvt - INFO - Creating DiseaseAwareHVT for img_size: (448, 448). CFG_LOAD_SUCCESS: True. Patch_size from cfg_module: 14
+2025-05-09 06:05:37,376 - phase2_model.models.hvt - INFO - Instantiating DiseaseAwareHVT with effective parameters: patch_size=14, embed_dim_rgb=128, depths=[3, 6, 18, 3], ssl_enable_mae=True
+2025-05-09 06:05:39,681 - phase2_model.models.dfca - INFO - DFCA: Initialized with learnable disease mask parameter.
+2025-05-09 06:05:39,809 - phase2_model.models.dfca - INFO - DFCA initialized: embed_dim=1024, num_heads=16, dropout=0.1
+2025-05-09 06:05:39,809 - phase2_model.models.hvt - INFO - DFCA fusion enabled.
+2025-05-09 06:05:39,812 - phase2_model.models.hvt - INFO - MAEPredictionHead initialized: embed_dim=1024, decoder_dim=64, target_patch_pixels=588
+2025-05-09 06:05:39,815 - phase2_model.models.hvt - INFO - MAEPredictionHead initialized: embed_dim=1024, decoder_dim=64, target_patch_pixels=588
+2025-05-09 06:05:39,815 - phase2_model.models.hvt - INFO - MAE components initialized for DiseaseAwareHVT.
+2025-05-09 06:05:39,817 - phase2_model.models.hvt - INFO - Contrastive projector initialized for DiseaseAwareHVT with output dim 128.
+2025-05-09 06:05:39,818 - phase2_model.models.hvt - INFO - Auxiliary heads for consistency loss initialized for DiseaseAwareHVT.
+2025-05-09 06:05:42,106 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Backbone has MAE capabilities enabled (though not used by SimCLR wrapper).
+2025-05-09 06:05:42,106 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Backbone has its own contrastive projector (though SimCLR wrapper uses its own).
+2025-05-09 06:05:42,107 - phase3_pretraining.models.hvt_wrapper - INFO - Initialized HVT backbone (DiseaseAwareHVT_XL) for pre-training with img_size (448, 448).
+2025-05-09 06:05:42,107 - phase3_pretraining.models.hvt_wrapper - INFO - Backbone final RGB encoded dim: 1024
+2025-05-09 06:05:42,108 - phase3_pretraining.models.hvt_wrapper - INFO - Backbone final Spectral encoded dim: 1024
+2025-05-09 06:05:42,108 - phase3_pretraining.models.hvt_wrapper - INFO - Projection head input dim determined as: 1024
+2025-05-09 06:05:42,130 - phase3_pretraining.models.projection_head - INFO - ProjectionHead initialized: in=1024, hidden=1024, out=256, bn=True
+2025-05-09 06:05:42,130 - phase3_pretraining.models.hvt_wrapper - INFO - HVTForPretraining wrapper initialized.
+2025-05-09 06:05:42,135 - phase3_pretraining.utils.augmentations - INFO - SimCLRAugmentation initialized for img_size (448, 448).
+2025-05-09 06:05:42,135 - phase3_pretraining.utils.losses - INFO - InfoNCELoss initialized with temperature: 0.1
+2025-05-09 06:05:42,136 - __main__ - INFO - Initializing Pretrainer...
+2025-05-09 06:05:42,873 - phase3_pretraining.pretrain.trainer - INFO - Pretrainer initialized. Total wrapper params: 219957037, Trainable: 219957037
+2025-05-09 06:05:42,873 - phase3_pretraining.pretrain.trainer - INFO - Optimizer: AdamW, LR: 0.0005, WD: 0.05, AccumSteps: 4
+2025-05-09 06:05:42,873 - __main__ - INFO - Starting pre-training for 100 epochs.
+2025-05-09 06:05:42,873 - __main__ - ERROR - Critical error during pre-training: name 'time' is not defined
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain.py", line 141, in main_pretrain
+    epoch_start_time = time.time()
+NameError: name 'time' is not defined
+2025-05-09 06:05:42,874 - __main__ - INFO - Pre-training finished or interrupted.
+2025-05-09 06:05:44,287 - phase3_pretraining.pretrain.trainer - INFO - Pretrained backbone checkpoint saved to /teamspace/studios/this_studio/cvpr25/pretrain_checkpoints/hvt_xl_pretrain_epoch_final.pth (SSL Epoch 100, BestProbeMetric -1.0000)
+2025-05-09 06:05:44,288 - __main__ - INFO - Final pre-trained model saved with best probe accuracy: -1.00%
+2025-05-09 06:07:46,215 - root - INFO - Root logging setup to /teamspace/studios/this_studio/cvpr25/logs/phase3_pretrain_hvt_xl.log
+2025-05-09 06:07:46,217 - __main__ - INFO - Global random seed set to: 42
+2025-05-09 06:07:46,218 - __main__ - INFO - Using device: cuda
+2025-05-09 06:07:46,244 - __main__ - INFO - CUDA Device Name: Tesla T4
+2025-05-09 06:07:46,244 - __main__ - INFO - CUDA Version: 12.1
+2025-05-09 06:07:46,244 - __main__ - INFO - Selected image size for pre-training: (448, 448)
+2025-05-09 06:07:46,244 - __main__ - INFO - Initializing datasets for pre-training and linear probing...
+2025-05-09 06:07:46,245 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: train, img_size: (448, 448)
+2025-05-09 06:07:46,245 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:07:46,333 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:07:46,648 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:07:46,651 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:07:46,651 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:07:46,651 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:07:46,651 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:07:46,651 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:07:46,652 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:07:46,652 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:07:46,652 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:07:46,652 - phase3_pretraining.dataset - INFO - Dataset split 'train' size: 8680 samples.
+2025-05-09 06:07:46,653 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: train, img_size: (448, 448)
+2025-05-09 06:07:46,653 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:07:46,749 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:07:47,024 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:07:47,027 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:07:47,028 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:07:47,028 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:07:47,028 - phase3_pretraining.dataset - INFO - Dataset split 'train' size: 8680 samples.
+2025-05-09 06:07:47,029 - phase3_pretraining.dataset - INFO - Initializing Dataset from: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection for split: val, img_size: (448, 448)
+2025-05-09 06:07:47,029 - phase3_pretraining.dataset - INFO - Scanning dataset type: Original Dataset
+2025-05-09 06:07:47,109 - phase3_pretraining.dataset - INFO - Scanning dataset type: Augmented Dataset
+2025-05-09 06:07:47,415 - phase3_pretraining.dataset - INFO - Total valid image tuples found: 9137
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO - Overall Class Distribution:
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Bacterial Blight': 1250 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Curl Virus': 1431 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Healthy Leaf': 1257 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Herbicide Growth Damage': 1280 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Leaf Hopper Jassids': 1225 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Leaf Redding': 1578 samples
+2025-05-09 06:07:47,419 - phase3_pretraining.dataset - INFO -   Class 'Leaf Variegation': 1116 samples
+2025-05-09 06:07:47,420 - phase3_pretraining.dataset - INFO - Dataset split 'val' size: 457 samples.
+2025-05-09 06:07:47,420 - __main__ - INFO - Pretrain dataset size: 8680
+2025-05-09 06:07:47,420 - __main__ - INFO - Probe train dataset size: 8680, Probe val dataset size: 457
+2025-05-09 06:07:47,421 - __main__ - INFO - Pretrain DataLoader: 542 batches of size 16. Probe Train: 543, Probe Val: 29 batches of size 16.
+2025-05-09 06:07:47,421 - __main__ - INFO - Initializing HVTForPretraining model, augmentations, and loss function...
+2025-05-09 06:07:47,421 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Attempting to create HVTBackbone using params from phase3_pretraining.config via phase2_model's config loading mechanism.
+2025-05-09 06:07:47,421 - phase2_model.models.hvt - INFO - Creating DiseaseAwareHVT for img_size: (448, 448). CFG_LOAD_SUCCESS: True. Patch_size from cfg_module: 14
+2025-05-09 06:07:47,421 - phase2_model.models.hvt - INFO - Instantiating DiseaseAwareHVT with effective parameters: patch_size=14, embed_dim_rgb=128, depths=[3, 6, 18, 3], ssl_enable_mae=True
+2025-05-09 06:07:49,543 - phase2_model.models.dfca - INFO - DFCA: Initialized with learnable disease mask parameter.
+2025-05-09 06:07:49,714 - phase2_model.models.dfca - INFO - DFCA initialized: embed_dim=1024, num_heads=16, dropout=0.1
+2025-05-09 06:07:49,715 - phase2_model.models.hvt - INFO - DFCA fusion enabled.
+2025-05-09 06:07:49,718 - phase2_model.models.hvt - INFO - MAEPredictionHead initialized: embed_dim=1024, decoder_dim=64, target_patch_pixels=588
+2025-05-09 06:07:49,720 - phase2_model.models.hvt - INFO - MAEPredictionHead initialized: embed_dim=1024, decoder_dim=64, target_patch_pixels=588
+2025-05-09 06:07:49,721 - phase2_model.models.hvt - INFO - MAE components initialized for DiseaseAwareHVT.
+2025-05-09 06:07:49,724 - phase2_model.models.hvt - INFO - Contrastive projector initialized for DiseaseAwareHVT with output dim 128.
+2025-05-09 06:07:49,725 - phase2_model.models.hvt - INFO - Auxiliary heads for consistency loss initialized for DiseaseAwareHVT.
+2025-05-09 06:07:51,809 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Backbone has MAE capabilities enabled (though not used by SimCLR wrapper).
+2025-05-09 06:07:51,810 - phase3_pretraining.models.hvt_wrapper - INFO - HVTWrapper: Backbone has its own contrastive projector (though SimCLR wrapper uses its own).
+2025-05-09 06:07:51,811 - phase3_pretraining.models.hvt_wrapper - INFO - Initialized HVT backbone (DiseaseAwareHVT_XL) for pre-training with img_size (448, 448).
+2025-05-09 06:07:51,811 - phase3_pretraining.models.hvt_wrapper - INFO - Backbone final RGB encoded dim: 1024
+2025-05-09 06:07:51,812 - phase3_pretraining.models.hvt_wrapper - INFO - Backbone final Spectral encoded dim: 1024
+2025-05-09 06:07:51,812 - phase3_pretraining.models.hvt_wrapper - INFO - Projection head input dim determined as: 1024
+2025-05-09 06:07:51,831 - phase3_pretraining.models.projection_head - INFO - ProjectionHead initialized: in=1024, hidden=1024, out=256, bn=True
+2025-05-09 06:07:51,831 - phase3_pretraining.models.hvt_wrapper - INFO - HVTForPretraining wrapper initialized.
+2025-05-09 06:07:51,832 - phase3_pretraining.utils.augmentations - INFO - SimCLRAugmentation initialized for img_size (448, 448).
+2025-05-09 06:07:51,832 - phase3_pretraining.utils.losses - INFO - InfoNCELoss initialized with temperature: 0.1
+2025-05-09 06:07:51,832 - __main__ - INFO - Initializing Pretrainer...
+2025-05-09 06:07:52,495 - phase3_pretraining.pretrain.trainer - INFO - Pretrainer initialized. Total wrapper params: 219957037, Trainable: 219957037
+2025-05-09 06:07:52,495 - phase3_pretraining.pretrain.trainer - INFO - Optimizer: AdamW, LR: 0.0005, WD: 0.05, AccumSteps: 4
+2025-05-09 06:07:52,495 - __main__ - INFO - Starting pre-training for 100 epochs.
+2025-05-09 06:11:54,232 - __main__ - WARNING - Pre-training interrupted by user.
+2025-05-09 06:11:54,248 - __main__ - INFO - Pre-training finished or interrupted.
+2025-05-09 06:11:57,428 - phase3_pretraining.pretrain.trainer - INFO - Pretrained backbone checkpoint saved to /teamspace/studios/this_studio/cvpr25/pretrain_checkpoints/hvt_xl_pretrain_epoch_final.pth (SSL Epoch 100, BestProbeMetric -1.0000)
+2025-05-09 06:11:57,430 - __main__ - INFO - Final pre-trained model saved with best probe accuracy: -1.00%
