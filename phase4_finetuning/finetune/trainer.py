@@ -6,170 +6,163 @@ from tqdm import tqdm
 import numpy as np
 import logging
 import sys
-from typing import Optional, Dict # Added Dict
-from typing import Tuple # Add for Tuple type hint
+from typing import Optional, Dict, Tuple, List # Added List
 
 # Use relative import for metrics within the same package
-from ..utils.metrics import compute_metrics 
+from ..utils.metrics import compute_metrics
 # Import config dict for defaults if needed (e.g. num_classes)
-from ..config import config as default_config 
+# from ..config import config as default_config # Not strictly needed if params passed
 
 logger = logging.getLogger(__name__)
 
 class Finetuner:
-    def __init__(self, 
-                 model: nn.Module, 
+    def __init__(self,
+                 model: nn.Module,
                  optimizer: torch.optim.Optimizer,
-                 criterion: nn.Module, # Loss function (e.g., CrossEntropyLoss)
-                 device: str, 
-                 scaler: GradScaler, # Pass GradScaler for mixed precision
-                 scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None, 
-                 lr_scheduler_on_batch: bool = False, 
+                 criterion: nn.Module, # Loss function
+                 device: str,
+                 scaler: GradScaler,
+                 scheduler: Optional[torch.optim.lr_scheduler._LRScheduler] = None,
+                 lr_scheduler_on_batch: bool = False, # True if scheduler steps per batch (e.g. WarmupCosine)
                  accumulation_steps: int = 1,
                  clip_grad_norm: Optional[float] = None,
-                 augmentations = None, # Augmentation transform to apply
-                 num_classes: int = default_config['num_classes'] 
+                 augmentations = None, # Augmentation transform
+                 num_classes: int = 7 # Fallback if not in config from main
                  ):
         self.model = model.to(device)
         self.optimizer = optimizer
-        self.criterion = criterion.to(device) 
+        self.criterion = criterion.to(device)
         self.device = device
         self.scaler = scaler
         self.scheduler = scheduler
         self.lr_scheduler_on_batch = lr_scheduler_on_batch
-        self.augmentations = augmentations 
-        self.accumulation_steps = max(1, accumulation_steps) # Ensure at least 1
+        self.augmentations = augmentations
+        self.accumulation_steps = max(1, accumulation_steps)
         self.clip_grad_norm = clip_grad_norm
         self.num_classes = num_classes
-        
-        logger.info(f"Finetuner initialized with device={device}, accumulation_steps={self.accumulation_steps}.")
+
+        logger.info(f"Finetuner initialized: device={device}, accum_steps={self.accumulation_steps}, lr_sched_on_batch={self.lr_scheduler_on_batch}")
 
     def train_one_epoch(self, train_loader: torch.utils.data.DataLoader, epoch: int, total_epochs: int) -> float:
-        """ Trains the model for one epoch. Returns average training loss. """
         self.model.train()
         total_loss = 0.0
-        processed_batches = 0
-        self.optimizer.zero_grad() 
+        processed_batches_for_avg_loss = 0 # Use this for averaging loss
+        self.optimizer.zero_grad(set_to_none=True) # Zero at start of epoch / first accum cycle
 
-        pbar = tqdm(enumerate(train_loader), total=len(train_loader), 
-                    desc=f"Epoch {epoch}/{total_epochs} [Fine-tuning]", file=sys.stdout)
+        pbar = tqdm(enumerate(train_loader), total=len(train_loader),
+                    desc=f"Epoch {epoch}/{total_epochs} [Fine-tuning]", file=sys.stdout, dynamic_ncols=True)
 
         for batch_idx, (rgb_images, labels) in pbar:
-            # Ensure images and labels are on the correct device
             rgb_images = rgb_images.to(self.device, non_blocking=True)
             labels = labels.to(self.device, non_blocking=True)
 
-            # Apply augmentations if they exist
             if self.augmentations:
-                # Assume augmentations work on batches and are on the correct device
-                rgb_images = self.augmentations(rgb_images) 
+                rgb_images = self.augmentations(rgb_images)
 
-            # Mixed precision forward pass
-            with autocast(enabled=self.scaler.is_enabled()):
-                # Fine-tuning usually uses only RGB input to the pre-trained model
-                # Adjust model call if it still expects spectral input (even if None)
-                # Assuming model forward now takes only rgb_img for fine-tuning:
-                outputs = self.model(rgb_images) 
-                # If model still needs spectral=None: outputs = self.model(rgb_images, None) 
-                
-                loss = self.criterion(outputs, labels)
-                if self.accumulation_steps > 1:
-                    loss = loss / self.accumulation_steps
+            loss_this_iter = 0.0 # For logging the loss of this specific iteration
+            try:
+                with autocast(enabled=self.scaler.is_enabled()):
+                    # Assuming your HVT model's forward for classification takes only rgb_img
+                    # or handles spectral_img=None correctly if it's still an argument.
+                    # For fine-tuning, it's common to adapt the pre-trained model
+                    # to only take RGB if SimCLR was RGB-only.
+                    # The HVT model from phase2 uses mode='classify' and can take spectral=None.
+                    outputs = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
+                    # If the model's classify mode returns (main_logits, aux_logits), take main_logits
+                    if isinstance(outputs, tuple):
+                        outputs = outputs[0]
+
+                    loss = self.criterion(outputs, labels)
+                    loss_this_iter = loss.item() # Store raw loss for this iteration
+                    if self.accumulation_steps > 1:
+                        loss = loss / self.accumulation_steps
+            except Exception as e_fwd:
+                logger.error(f"E{epoch} B{batch_idx}: Forward/loss error: {e_fwd}", exc_info=True); continue
+
 
             if not torch.isfinite(loss):
-                logger.error(f"Epoch {epoch}, Batch {batch_idx}: Non-finite loss ({loss.item()}). Skipping backward/step.")
-                # Zero grads for this cycle and continue without stepping optimizer
-                self.optimizer.zero_grad(set_to_none=True) # More efficient zeroing
-                continue 
+                logger.error(f"E{epoch} B{batch_idx}: Non-finite loss ({loss.item()}). Skipping backward/step.")
+                # If grads were accumulated, they should be zeroed before next official step
+                if (batch_idx + 1) % self.accumulation_steps == 0 : self.optimizer.zero_grad(set_to_none=True)
+                continue
 
-            # Scale loss and calculate gradients
             self.scaler.scale(loss).backward()
 
-            # Perform optimizer step after accumulating gradients
             if (batch_idx + 1) % self.accumulation_steps == 0:
                 if self.clip_grad_norm is not None:
-                    self.scaler.unscale_(self.optimizer) 
+                    self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip_grad_norm)
-                
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
-                self.optimizer.zero_grad(set_to_none=True) # Zero grads after step
+                self.optimizer.zero_grad(set_to_none=True)
 
                 if self.scheduler and self.lr_scheduler_on_batch:
-                    self.scheduler.step()
-            
+                    self.scheduler.step() # Step per-batch schedulers here
+
             current_lr = self.optimizer.param_groups[0]['lr']
-            # Accumulate loss correctly, considering accumulation factor only once per step
-            batch_loss = loss.item() * self.accumulation_steps 
-            total_loss += batch_loss
-            processed_batches += 1 # Count batches where loss was finite and processed
-            pbar.set_postfix({
-                "Loss": f"{batch_loss:.4f}", 
-                "LR": f"{current_lr:.1e}"
-            })
-            
-        avg_epoch_loss = total_loss / processed_batches if processed_batches > 0 else 0.0
+            total_loss += loss_this_iter # Accumulate the raw loss for averaging
+            processed_batches_for_avg_loss += 1
+            pbar.set_postfix({"Loss": f"{loss_this_iter:.4f}", "LR": f"{current_lr:.2e}"})
         
-        if self.scheduler and not self.lr_scheduler_on_batch:
-             if not isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                 self.scheduler.step()
+        pbar.close()
+        avg_epoch_loss = total_loss / processed_batches_for_avg_loss if processed_batches_for_avg_loss > 0 else 0.0
         
-        logger.info(f"Epoch {epoch} training finished. Average Loss: {avg_epoch_loss:.4f}")
+        # Epoch-based schedulers are stepped in main.py after validation
+        # (Except ReduceLROnPlateau which needs metric)
+
+        logger.info(f"Epoch {epoch} training finished. Average Loss: {avg_epoch_loss:.4f}, Current LR: {current_lr:.2e}")
         return avg_epoch_loss
 
-    def validate_one_epoch(self, val_loader: torch.utils.data.DataLoader, class_names: Optional[list] = None) -> Tuple[float, Dict]:
-        """ Validates the model for one epoch. Returns avg loss and metrics dict. """
+    def validate_one_epoch(self, val_loader: torch.utils.data.DataLoader, class_names: Optional[List[str]] = None) -> Tuple[float, Dict]:
         self.model.eval()
         total_val_loss = 0.0
-        all_preds = []
-        all_labels = []
-        num_batches = len(val_loader)
+        all_preds_list: List[torch.Tensor] = [] # Use list of tensors
+        all_labels_list: List[torch.Tensor] = []
+        num_val_batches = len(val_loader)
 
-        pbar = tqdm(val_loader, desc="Validation", file=sys.stdout, leave=False)
+        pbar_val = tqdm(val_loader, desc="Validation", file=sys.stdout, leave=False, dynamic_ncols=True)
         with torch.no_grad():
-            for rgb_images, labels in pbar:
+            for rgb_images, labels in pbar_val:
                 rgb_images = rgb_images.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
 
-                with autocast(enabled=self.scaler.is_enabled()):
-                    # Assuming model forward takes only rgb_img for validation
-                    outputs = self.model(rgb_images) 
-                    # If model needs spectral=None: outputs = self.model(rgb_images, None)
+                with autocast(enabled=self.scaler.is_enabled()): # autocast can be used for inference too
+                    outputs = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
+                    if isinstance(outputs, tuple): outputs = outputs[0] # Take main logits
                     loss = self.criterion(outputs, labels)
-                
+
                 if not torch.isfinite(loss):
-                     logger.warning(f"Non-finite validation loss detected ({loss.item()}). Skipping.")
-                     num_batches = max(1, num_batches - 1) # Adjust count for average
+                     logger.warning(f"Non-finite validation loss detected ({loss.item()}). Skipping this batch for loss avg.")
+                     num_val_batches = max(1, num_val_batches -1) # Adjust divisor
                      continue
 
                 total_val_loss += loss.item()
                 preds = torch.argmax(outputs, dim=1)
-                all_preds.append(preds.cpu())
-                all_labels.append(labels.cpu())
+                all_preds_list.append(preds.cpu())
+                all_labels_list.append(labels.cpu())
 
-        avg_val_loss = total_val_loss / num_batches if num_batches > 0 else 0.0
-        
-        metrics = {"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0} # Default empty metrics
-        if not all_preds or not all_labels:
-             logger.warning("Validation yielded no results. Returning zero metrics.")
+        avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
+        metrics = {"val_loss": avg_val_loss, "accuracy": 0.0, "f1_macro": 0.0} # Init with val_loss
+
+        if not all_preds_list: # Check if list is empty
+             logger.warning("Validation yielded no predictions. Returning zero metrics.")
         else:
-            all_preds_np = torch.cat(all_preds).numpy()
-            all_labels_np = torch.cat(all_labels).numpy()
-            metrics = compute_metrics(all_preds_np, all_labels_np, self.num_classes, class_names)
+            all_preds_np = torch.cat(all_preds_list).numpy()
+            all_labels_np = torch.cat(all_labels_list).numpy()
+            # Ensure num_classes passed to compute_metrics is correct
+            computed_metrics = compute_metrics(all_preds_np, all_labels_np, num_classes=self.num_classes, class_names=class_names)
+            metrics.update(computed_metrics) # Add computed metrics
 
         log_str = f"Validation finished. Avg Loss: {avg_val_loss:.4f}"
-        for k, v in metrics.items():
-            log_str += f", {k}: {v:.4f}"
+        for k, v_metric in metrics.items(): # Iterate through updated metrics dict
+            if k != "val_loss": log_str += f", {k}: {v_metric:.4f}" # Avoid double printing val_loss
         logger.info(log_str)
-                    
-        return avg_val_loss, metrics
+
+        return avg_val_loss, metrics # Return the dict which includes val_loss
 
     def save_model_checkpoint(self, path: str):
-        """ Saves the model's state dictionary. """
         try:
-            # Save the entire model state_dict
             torch.save(self.model.state_dict(), path)
             logger.info(f"Model checkpoint saved to {path}")
         except Exception as e:
-            logger.error(f"Error saving model checkpoint to {path}: {e}")
-
+            logger.error(f"Error saving model checkpoint to {path}: {e}", exc_info=True)

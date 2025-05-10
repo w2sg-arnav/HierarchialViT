@@ -2944,3 +2944,31 @@
 2025-05-10 07:01:46 - phase3_pretraining.pretrain.trainer - DEBUG - [TRAINER E20 B2/135] Loss: 4.1586 (accum 4.1586), LR: 9.91e-04, Times(s): Tot=0.796 (Load=0.000, Device=0.000, Aug=0.010, Fwd/Bwd=0.742, Opt=0.044)
 2025-05-10 07:01:47 - phase3_pretraining.pretrain.trainer - DEBUG - [TRAINER E20 B3/135] Loss: 4.1577 (accum 4.1577), LR: 9.91e-04, Times(s): Tot=1.025 (Load=0.000, Device=0.000, Aug=0.006, Fwd/Bwd=0.976, Opt=0.042)
 2025-05-10 07:02:10 - phase3_pretraining.pretrain.trainer - DEBUG - [TRAINER E20 B51/135] Loss: 4.1600 (accum 4.1600), LR: 9.90e-04, Times(s): Tot=0.515 (Load=0.000, Device=0.000, Aug=0.002, Fwd/Bwd=0.467, Opt=0.046)
+2025-05-10 07:02:34 - phase3_pretraining.pretrain.trainer - DEBUG - [TRAINER E20 B101/135] Loss: 4.1596 (accum 4.1596), LR: 9.90e-04, Times(s): Tot=0.470 (Load=0.000, Device=0.000, Aug=0.003, Fwd/Bwd=0.418, Opt=0.049)
+2025-05-10 07:02:50 - phase3_pretraining.pretrain.trainer - INFO - [TRAINER E20] Batch loop finished. Actual optimizer steps: 135. Avg batch time: 0.490s.
+2025-05-10 07:02:50 - phase3_pretraining.pretrain.trainer - INFO - [TRAINER E20] train_one_epoch finished. AvgLoss: 4.1588, FinalLR: 9.89e-04
+2025-05-10 07:02:50 - __main__ - INFO - SSL Epoch 20/160 COMPLETED. Duration: 69.78s. Samples/sec: 123.81. Avg Loss: 4.1588. LR: 9.89e-04
+2025-05-10 07:02:50 - phase3_pretraining.pretrain.trainer - INFO - [PROBE E20] --- Starting Linear Probe ---
+2025-05-10 07:02:54 - phase3_pretraining.pretrain.trainer - INFO - [PROBE E20] Feature dim determined as: 1536
+2025-05-10 07:02:54 - phase3_pretraining.pretrain.trainer - INFO - [PROBE E20] Probe Optimizer: SGD, LR: 0.1, WD: 0.0
+2025-05-10 07:02:54 - phase3_pretraining.pretrain.trainer - INFO - [PROBE E20] Training probe for 20 epochs using 7 classes.
+2025-05-10 07:03:10 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 1] Avg Train Loss: 124.0723
+2025-05-10 07:03:26 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 2] Avg Train Loss: 148.4872
+2025-05-10 07:03:43 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 3] Avg Train Loss: 180.3712
+2025-05-10 07:03:59 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 4] Avg Train Loss: 169.2802
+2025-05-10 07:04:16 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 5] Avg Train Loss: 125.4581
+2025-05-10 07:04:33 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 6] Avg Train Loss: 135.8446
+2025-05-10 07:04:50 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 7] Avg Train Loss: 131.7656
+2025-05-10 07:05:06 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 8] Avg Train Loss: 132.2009
+2025-05-10 07:05:23 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 9] Avg Train Loss: 108.2656
+2025-05-10 07:05:40 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 10] Avg Train Loss: 140.5713
+2025-05-10 07:05:57 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 11] Avg Train Loss: 127.7260
+2025-05-10 07:06:14 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 12] Avg Train Loss: 213.4180
+2025-05-10 07:06:29 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 13] Avg Train Loss: 146.6224
+2025-05-10 07:06:46 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 14] Avg Train Loss: 120.7641
+2025-05-10 07:07:03 - phase3_pretraining.pretrain.trainer - DEBUG - [PROBE E20 - Train EP 15] Avg Train Loss: 127.9341
+2025-05-10 07:07:07 - __main__ - WARNING - Pre-training interrupted by user at epoch 20.
+2025-05-10 07:07:07 - __main__ - INFO - Pre-training finished or interrupted after 19 completed epochs.
+2025-05-10 07:07:07 - phase3_pretraining.pretrain.trainer - INFO - [SAVE CKPT] Attempting to save checkpoint to /teamspace/studios/this_studio/cvpr25/pretrain_checkpoints_h100_xl/hvt_xl_h100_prod_final.pth...
+2025-05-10 07:07:19 - phase3_pretraining.pretrain.trainer - INFO - [SAVE CKPT] Pretrained backbone checkpoint saved to /teamspace/studios/this_studio/cvpr25/pretrain_checkpoints_h100_xl/hvt_xl_h100_prod_final.pth (SSL Epoch 19, BestProbeMetric 13.1291)
+2025-05-10 07:07:19 - __main__ - INFO - Final pre-trained model saved. Best probe accuracy during run: 13.13%
