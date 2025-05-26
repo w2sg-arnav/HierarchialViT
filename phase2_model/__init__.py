@@ -1,27 +1,30 @@
 # phase2_model/__init__.py
 import logging
-
 logger = logging.getLogger(__name__)
 
-# Define __all__ outside the try block to ensure it's always defined
+# This file makes models available directly under 'phase2_model'
+# e.g., from phase2_model import DiseaseAwareHVT
+
+# Default __all__ to empty list
 __all__ = []
 
 try:
-    # Relative imports from the 'models' subdirectory within 'phase2_model'
-    from .models.baseline import InceptionV3Baseline
-    from .models.dfca import DiseaseFocusedCrossAttention
-    from .models.hvt import DiseaseAwareHVT 
-    # from .models.hvt import create_disease_aware_hvt_from_config # Expose if used by other modules
-
-    # Populate __all__ only if imports succeed
+    from .models import ( # Import from the .models subpackage
+        InceptionV3Baseline,
+        DiseaseFocusedCrossAttention,
+        DiseaseAwareHVT,
+        create_disease_aware_hvt, # Use the renamed factory
+    )
+    # If imports are successful, populate __all__
     __all__ = [
         "InceptionV3Baseline",
         "DiseaseFocusedCrossAttention",
         "DiseaseAwareHVT",
-        # "create_disease_aware_hvt_from_config",
+        "create_disease_aware_hvt",
     ]
+    logger.info("Models re-exported successfully by phase2_model/__init__.py.")
+
 except ImportError as e:
-    logger.warning(f"Warning in phase2_model/__init__.py: Could not perform standard model imports "
-                   f"from submodules (e.g., .models.baseline). Check file structure and imports. Error: {e}")
-except Exception as e: # Catch any other potential errors during import
-    logger.error(f"Unexpected error in phase2_model/__init__.py: {e}", exc_info=True)
+    logger.error(f"Error re-exporting models in phase2_model/__init__.py: {e}", exc_info=True)
+    # __all__ remains empty or partially populated if some imports failed.
+    # This helps avoid NameErrors if this package is imported but sub-modules failed.

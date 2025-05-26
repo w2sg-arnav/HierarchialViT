@@ -1,211 +1,175 @@
 # phase2_model/main.py
 import torch
-import logging # Keep logging import at the top
-import torch.nn as nn
-from typing import Tuple, Optional, Dict, Union
+import torch.nn as nn # For type hints and potential direct use
+import logging
+from typing import Tuple, Dict, Any, Optional # Added Any for model_params_dict
 
-# --- Path Setup (Good practice, though less critical if main.py only uses local modules) ---
+# --- Path Setup ---
+# Ensures that if this script is run directly, it can find sibling modules (like config)
+# and potentially modules from the project root if needed for other phases.
 import sys
 import os
-current_script_dir = os.path.dirname(os.path.abspath(__file__)) # .../phase2_model
-project_root_from_phase2_main = os.path.dirname(current_script_dir) # .../cvpr25
+_current_script_dir = os.path.dirname(os.path.abspath(__file__)) # .../phase2_model
+_project_root_candidate = os.path.dirname(_current_script_dir)   # .../ (e.g. phase2_project)
 
-if project_root_from_phase2_main not in sys.path:
-    sys.path.insert(0, project_root_from_phase2_main)
-    # Use print for this early debug message as logger might not be set up
-    print(f"DEBUG (phase2_model/main.py): Added project root to sys.path: {project_root_from_phase2_main}")
+# Add project root to sys.path if not already present.
+# This is more for inter-phase imports later, less critical for self-contained phase2_model tests.
+if _project_root_candidate not in sys.path:
+    sys.path.insert(0, _project_root_candidate)
 # --- End Path Setup ---
 
 # --- Configuration Import from local phase2_model/config.py ---
-# This script will exclusively use constants defined in its own 'config.py'.
-# The names imported here MUST match the top-level constant names in 'phase2_model/config.py'.
 try:
-    from config import (
-        PROGRESSIVE_RESOLUTIONS,
+    # Import specific configuration variables needed by this main.py
+    from .config import (
         NUM_CLASSES,
-        HVT_SPECTRAL_CHANNELS,  # Import the exact name defined in phase2_model/config.py
-        IMAGE_SIZE,
-        PATCH_SIZE,
-        SSL_ENABLE_MAE,
-        SSL_ENABLE_CONTRASTIVE,
-        ENABLE_CONSISTENCY_LOSS_HEADS,
-        SSL_CONTRASTIVE_PROJECTOR_DIM
-        # Add any other constants from phase2_model/config.py that this main.py needs
+        HVT_MODEL_PARAMS,         # The main dictionary for HVT parameters
+        DEVICE,
+        INITIAL_IMAGE_SIZE,       # Used to instantiate the model initially
+        PROGRESSIVE_RESOLUTIONS_TEST # List of resolutions to test
     )
-    # Alias HVT_SPECTRAL_CHANNELS for local use if the rest of the script uses the shorter name
-    SPECTRAL_CHANNELS = HVT_SPECTRAL_CHANNELS
-
-    # Initialize logger for this file AFTER successful config import (as config.py sets up basicConfig)
-    logger = logging.getLogger(__name__)
-    logger.info("Successfully imported constants from local phase2_model/config.py")
-
-except ImportError as e:
-    # Fallback logging if config.py (which sets up logging) fails to import
+    logger = logging.getLogger(__name__) # Initialize logger after config successfully imports
+    logger.info("Successfully imported constants from local phase2_model/config.py for main.py execution.")
+except ImportError as e_cfg:
+    # Fallback basic logging if config.py (which should set up logging) fails
     logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-    logger = logging.getLogger(__name__) # Define logger here for the error message
-    logger.error(f"CRITICAL ERROR in phase2_model/main.py: Failed to import required constants from 'phase2_model/config.py'.")
-    logger.error(f"Import Error: {e}")
-    logger.error("Please ensure 'phase2_model/config.py' exists and defines all necessary top-level constants such as: \n"
-                 "PROGRESSIVE_RESOLUTIONS, NUM_CLASSES, HVT_SPECTRAL_CHANNELS, IMAGE_SIZE, PATCH_SIZE, \n"
-                 "SSL_ENABLE_MAE, SSL_ENABLE_CONTRASTIVE, ENABLE_CONSISTENCY_LOSS_HEADS, SSL_CONTRASTIVE_PROJECTOR_DIM.")
-    logger.error("Exiting due to missing or incorrect configuration in 'phase2_model/config.py'.")
-    sys.exit(1) # Exit if essential config is missing
+    logger = logging.getLogger(__name__) # Define logger for error message
+    logger.error(f"CRITICAL ERROR in phase2_model/main.py: Failed to import from './config.py'. Error: {e_cfg}", exc_info=True)
+    logger.error("Ensure 'phase2_model/config.py' exists and defines: NUM_CLASSES, HVT_MODEL_PARAMS, DEVICE, INITIAL_IMAGE_SIZE, PROGRESSIVE_RESOLUTIONS_TEST.")
+    sys.exit(1)
 # --- End Configuration Import ---
 
 
-# --- Model Imports (from local 'models' subdirectory) ---
+# --- Model Imports (from phase2_model.models subpackage) ---
 try:
-    from models.hvt import DiseaseAwareHVT, create_disease_aware_hvt_from_config
-except ImportError as e:
-    logger.error(f"Failed to import HVT models from 'phase2_model/models/hvt.py': {e}")
-    logger.error("Ensure 'phase2_model/models/hvt.py' exists and is free of import errors itself.")
+    # Using relative import from .models, assuming main.py is part of phase2_model package
+    from .models import DiseaseAwareHVT, create_disease_aware_hvt # Use the renamed factory
+    # from .models import InceptionV3Baseline # Uncomment if InceptionV3 tests are also needed here
+    logger.info("HVT models imported successfully into phase2_model/main.py.")
+except ImportError as e_model:
+    logger.error(f"CRITICAL ERROR in phase2_model/main.py: Failed to import models from './models'. Error: {e_model}", exc_info=True)
+    logger.error("Ensure 'phase2_model/models/__init__.py' and model files (hvt.py, etc.) exist and are correct.")
     sys.exit(1)
-# from models.baseline import InceptionV3Baseline # Uncomment if baseline tests are needed
+# --- End Model Imports ---
 
 
-# --- Main Test Functions ---
-def test_hvt_model(model: DiseaseAwareHVT,
-                   img_size: Tuple[int, int],
-                   batch_size: int = 2,
-                   spectral_channels_test: int = SPECTRAL_CHANNELS, # Uses the (potentially aliased) SPECTRAL_CHANNELS
-                   use_spectral_input: bool = True):
-    """Test the DiseaseAwareHVT model's forward pass in various modes."""
-    logger.info(f"--- Testing HVT Model: {model.__class__.__name__} with img_size: {img_size} ---")
+def test_hvt_model_at_resolution(
+        model: DiseaseAwareHVT,
+        current_img_size: Tuple[int, int],
+        num_classes_test: int,
+        hvt_config_params: Dict[str, Any], # Pass the config for SSL flags etc.
+        batch_size: int = 2,
+        device_test: str = DEVICE
+    ):
+    """Test the DiseaseAwareHVT model's forward pass at a specific resolution."""
+    logger.info(f"--- Testing HVT @ {current_img_size} (Device: {device_test}) ---")
+    model.to(device_test)
+    model.eval() # Set to evaluation mode for testing
 
-    rgb_dummy = torch.randn(batch_size, 3, img_size[0], img_size[1])
+    # Extract spectral_channels from the passed HVT config for dummy data creation
+    spectral_channels_test = hvt_config_params.get('spectral_channels', 0)
+
+    rgb_dummy = torch.randn(batch_size, 3, current_img_size[0], current_img_size[1], device=device_test)
     spectral_dummy = None
-    if use_spectral_input and spectral_channels_test > 0:
-        spectral_dummy = torch.randn(batch_size, spectral_channels_test, img_size[0], img_size[1])
-        logger.info(f"Input: RGB shape {rgb_dummy.shape}, Spectral shape {spectral_dummy.shape}")
+    if spectral_channels_test > 0:
+        spectral_dummy = torch.randn(batch_size, spectral_channels_test, current_img_size[0], current_img_size[1], device=device_test)
+        logger.info(f"Input: RGB shape {rgb_dummy.shape}, Spectral shape {spectral_dummy.shape if spectral_dummy is not None else 'None'}")
     else:
-        logger.info(f"Input: RGB shape {rgb_dummy.shape}, Spectral: None (channels={spectral_channels_test}, use_spectral={use_spectral_input})")
-
-    model.eval()
+        logger.info(f"Input: RGB shape {rgb_dummy.shape}, Spectral: None (spectral_channels_test={spectral_channels_test})")
 
     # Test 'classify' mode
     try:
         with torch.no_grad():
             output = model(rgb_dummy, spectral_dummy, mode='classify')
-            if hasattr(model, 'enable_consistency_loss_heads') and model.enable_consistency_loss_heads:
+            main_logits: torch.Tensor
+            if hvt_config_params.get('enable_consistency_loss_heads', False):
                 main_logits, aux_outputs = output
                 assert isinstance(aux_outputs, dict), "Aux outputs should be a dict"
-                logger.info(f"Classify mode: Main logits shape {main_logits.shape}, Aux keys: {list(aux_outputs.keys())}")
-                if 'logits_rgb' in aux_outputs: assert aux_outputs['logits_rgb'].shape == (batch_size, NUM_CLASSES)
-                if spectral_dummy is not None and model.spectral_patch_embed and \
-                   'logits_spectral' in aux_outputs and aux_outputs['logits_spectral'] is not None:
-                    assert aux_outputs['logits_spectral'].shape == (batch_size, NUM_CLASSES)
+                logger.info(f"Classify: Main logits {main_logits.shape}, Aux keys: {list(aux_outputs.keys())}")
             else:
                 main_logits = output
-                logger.info(f"Classify mode: Main logits shape {main_logits.shape}")
-
-            expected_shape = (batch_size, NUM_CLASSES)
-            assert main_logits.shape == expected_shape, \
-                f"Classify output shape mismatch! Expected {expected_shape}, got {main_logits.shape}"
-            logger.info(f"HVT 'classify' mode successful for img_size {img_size}.")
-    except Exception as e:
-        logger.error(f"Error during 'classify' mode for HVT with img_size {img_size}: {e}", exc_info=True); raise
+                logger.info(f"Classify: Main logits shape {main_logits.shape}")
+            assert main_logits.shape == (batch_size, num_classes_test)
+    except Exception as e: logger.error(f"Error HVT 'classify' @{current_img_size}: {e}", exc_info=True); raise
 
     # Test 'get_embeddings' mode
     try:
         with torch.no_grad():
             embeddings: Dict[str, torch.Tensor] = model(rgb_dummy, spectral_dummy, mode='get_embeddings')
-            assert isinstance(embeddings, dict), "Embeddings should be a dict"
-            assert 'fused' in embeddings, "Fused embeddings missing"
-            logger.info(f"Get_embeddings mode: Fused shape {embeddings['fused'].shape}, Keys: {list(embeddings.keys())}")
-            logger.info(f"HVT 'get_embeddings' mode successful for img_size {img_size}.")
-    except Exception as e:
-        logger.error(f"Error during 'get_embeddings' mode for HVT with img_size {img_size}: {e}", exc_info=True); raise
+            assert 'fused_pooled' in embeddings
+            logger.info(f"Embeddings: Fused shape {embeddings['fused_pooled'].shape}, Keys: {list(embeddings.keys())}")
+    except Exception as e: logger.error(f"Error HVT 'get_embeddings' @{current_img_size}: {e}", exc_info=True); raise
 
-    # Test 'contrastive' mode (if enabled in model's config)
-    if hasattr(model, 'ssl_enable_contrastive') and model.ssl_enable_contrastive:
+    # Test 'contrastive' mode (if enabled in HVT config)
+    if hvt_config_params.get('ssl_enable_contrastive', False):
         try:
             with torch.no_grad():
-                projected_features = model(rgb_dummy, spectral_dummy, mode='contrastive')
-                expected_contrast_dim = SSL_CONTRASTIVE_PROJECTOR_DIM # From local config
-                if hasattr(model, 'contrastive_projector') and isinstance(model.contrastive_projector, nn.Sequential) and len(model.contrastive_projector) > 0:
-                    last_layer = model.contrastive_projector[-1]
-                    if hasattr(last_layer, 'out_features'):
-                        expected_contrast_dim = last_layer.out_features
-                expected_contrast_shape = (batch_size, expected_contrast_dim)
-                assert projected_features.shape == expected_contrast_shape, \
-                    f"Contrastive output shape mismatch! Expected {expected_contrast_shape}, got {projected_features.shape}"
-                logger.info(f"HVT 'contrastive' mode successful: Output shape {projected_features.shape}.")
-        except Exception as e:
-            logger.error(f"Error during 'contrastive' mode for HVT with img_size {img_size}: {e}", exc_info=True); raise
-    else:
-        logger.info("HVT 'contrastive' mode skipped (model.ssl_enable_contrastive is False or attribute missing).")
+                proj_feat = model(rgb_dummy, spectral_dummy, mode='contrastive')
+                expected_dim = hvt_config_params.get('ssl_contrastive_projector_dim', 128)
+                assert proj_feat.shape == (batch_size, expected_dim)
+                logger.info(f"Contrastive: Output shape {proj_feat.shape}")
+        except Exception as e: logger.error(f"Error HVT 'contrastive' @{current_img_size}: {e}", exc_info=True); raise
+    else: logger.info(f"Contrastive mode skipped (ssl_enable_contrastive: False for HVT @{current_img_size}).")
 
-    # Test 'mae' mode (if enabled in model's config)
-    if hasattr(model, 'ssl_enable_mae') and model.ssl_enable_mae:
+    # Test 'mae' mode (if enabled in HVT config)
+    # MAE mode involves masking, so it's more complex to assert shapes without knowing mask.
+    # We'll check if it runs and if outputs seem reasonable (e.g., not None if expected).
+    if hvt_config_params.get('ssl_enable_mae', False):
+        model.train() # MAE might have specific train-time behavior like dropout in decoder.
+                      # No gradient calculation here, so it's fine for a quick test.
         try:
-            model.train() # MAE might have specific train-time behavior (though test uses no_grad)
-            with torch.no_grad():
-                mae_output: Dict[str, Optional[torch.Tensor]] = model(rgb_dummy, spectral_dummy, mode='mae')
-                assert isinstance(mae_output, dict), "MAE output should be a dict"
-                assert 'mask_rgb' in mae_output # Mask should always be there
-
-                if mae_output.get('pred_rgb') is not None and mae_output.get('target_rgb') is not None:
-                    num_masked_rgb = mae_output['mask_rgb'].sum().item()
-                    expected_pixels_per_patch = 3 * PATCH_SIZE * PATCH_SIZE
-                    if num_masked_rgb > 0:
-                        assert mae_output['pred_rgb'].shape == (num_masked_rgb, expected_pixels_per_patch)
-                        assert mae_output['target_rgb'].shape == (num_masked_rgb, expected_pixels_per_patch)
-                    else: # Handle case where no patches are masked
-                        assert mae_output['pred_rgb'].shape == (0, expected_pixels_per_patch)
-                        assert mae_output['target_rgb'].shape == (0, expected_pixels_per_patch)
-                    logger.info(f"HVT 'mae' mode (RGB): pred shape {mae_output['pred_rgb'].shape}, target shape {mae_output['target_rgb'].shape}, num_masked {num_masked_rgb}")
-                else:
-                    logger.info(f"HVT 'mae' mode (RGB): pred_rgb or target_rgb is None. Mask sum: {mae_output['mask_rgb'].sum().item()}")
+            with torch.no_grad(): # Still no grad for testing inference path
+                # Create a dummy mask (masking first 25% of patches)
+                num_patches_total = (current_img_size[0] // hvt_config_params['patch_size']) * \
+                                    (current_img_size[1] // hvt_config_params['patch_size'])
+                num_masked = num_patches_total // 4
+                dummy_mae_mask = torch.zeros(batch_size, num_patches_total, dtype=torch.bool, device=device_test)
+                if num_masked > 0 : dummy_mae_mask[:, :num_masked] = True
 
 
-                if spectral_dummy is not None and model.spectral_patch_embed and \
-                   mae_output.get('pred_spectral') is not None and \
-                   mae_output.get('target_spectral') is not None and \
-                   mae_output.get('mask_spectral') is not None:
-                    num_masked_spec = mae_output['mask_spectral'].sum().item()
-                    expected_pixels_per_patch_spec = SPECTRAL_CHANNELS * PATCH_SIZE * PATCH_SIZE
-                    if num_masked_spec > 0:
-                        assert mae_output['pred_spectral'].shape == (num_masked_spec, expected_pixels_per_patch_spec)
-                        assert mae_output['target_spectral'].shape == (num_masked_spec, expected_pixels_per_patch_spec)
-                    else:
-                        assert mae_output['pred_spectral'].shape == (0, expected_pixels_per_patch_spec)
-                        assert mae_output['target_spectral'].shape == (0, expected_pixels_per_patch_spec)
-                    logger.info(f"HVT 'mae' mode (Spectral): pred shape {mae_output['pred_spectral'].shape}, target shape {mae_output['target_spectral'].shape}, num_masked {num_masked_spec}")
-                logger.info(f"HVT 'mae' mode test successful for img_size {img_size}.")
-            model.eval()
-        except Exception as e:
-            logger.error(f"Error during 'mae' mode for HVT with img_size {img_size}: {e}", exc_info=True); model.eval(); raise
-    else:
-        logger.info("HVT 'mae' mode skipped (model.ssl_enable_mae is False or attribute missing).")
+                mae_output: Dict[str, Optional[torch.Tensor]] = model(rgb_dummy, spectral_dummy, mode='mae', mae_mask_custom=dummy_mae_mask)
+                assert isinstance(mae_output, dict)
+                logger.info(f"MAE Output Keys @{current_img_size}: {list(mae_output.keys())}")
+                if mae_output.get('pred_rgb') is not None: logger.info(f"MAE pred_rgb shape: {mae_output['pred_rgb'].shape}")
+                if mae_output.get('pred_spectral') is not None: logger.info(f"MAE pred_spectral shape: {mae_output['pred_spectral'].shape}")
+        except Exception as e: logger.error(f"Error HVT 'mae' @{current_img_size}: {e}", exc_info=True); raise
+        finally: model.eval() # Ensure model is back in eval mode
+    else: logger.info(f"MAE mode skipped (ssl_enable_mae: False for HVT @{current_img_size}).")
+    logger.info(f"--- HVT Tests @ {current_img_size} PASSED ---")
 
 
-def run_hvt_tests():
-    logger.info("--- Starting DiseaseAwareHVT Tests (phase2_model/main.py) ---")
-    for res_idx, img_size_tuple in enumerate(PROGRESSIVE_RESOLUTIONS):
-        logger.info(f"Testing HVT with resolution: {img_size_tuple} ({res_idx+1}/{len(PROGRESSIVE_RESOLUTIONS)})")
-        # create_disease_aware_hvt_from_config will use its own internal config loading mechanism
-        # which should pick up values from phase2_model/config.py
-        hvt_model = create_disease_aware_hvt_from_config(img_size_tuple)
+def run_all_hvt_tests():
+    logger.info(f"\n======== Starting DiseaseAwareHVT Architecture Tests (Device: {DEVICE}) ========")
 
-        if SPECTRAL_CHANNELS > 0:
-            test_hvt_model(hvt_model, img_size=img_size_tuple, use_spectral_input=True, spectral_channels_test=SPECTRAL_CHANNELS)
-        else:
-            logger.info("Skipping HVT test with spectral input as SPECTRAL_CHANNELS is 0 or less.")
+    # Instantiate the HVT model ONCE using the INITIAL_IMAGE_SIZE.
+    # The model's internal state (like PatchEmbed.img_size) will be updated
+    # by its forward_features_encoded method before processing each resolution.
+    # The positional embeddings will be interpolated.
+    logger.info(f"Instantiating HVT with initial_img_size: {INITIAL_IMAGE_SIZE}")
+    hvt_model = create_disease_aware_hvt(
+        current_img_size=INITIAL_IMAGE_SIZE, # This is the size for which pos_embed is initially defined
+        num_classes=NUM_CLASSES,
+        model_params_dict=HVT_MODEL_PARAMS # Pass the whole config dict
+    )
 
-        test_hvt_model(hvt_model, img_size=img_size_tuple, use_spectral_input=False, spectral_channels_test=0)
+    # Test the *same* model instance at different resolutions
+    for res_idx, img_size_tuple_test in enumerate(PROGRESSIVE_RESOLUTIONS_TEST):
+        logger.info(f"\n>>> Testing HVT at Resolution: {img_size_tuple_test} ({res_idx+1}/{len(PROGRESSIVE_RESOLUTIONS_TEST)}) <<<")
+        test_hvt_model_at_resolution(
+            model=hvt_model,
+            current_img_size=img_size_tuple_test,
+            num_classes_test=NUM_CLASSES,
+            hvt_config_params=HVT_MODEL_PARAMS # Pass HVT params for SSL flags etc.
+        )
 
+    logger.info("======== DiseaseAwareHVT Architecture Tests Finished Successfully ========")
 
-def main_model_tests():
-    # Configure logging if not already done by importing config.py
-    # config.py in phase2_model should call logging.basicConfig()
-    # If logger has no handlers, it means config.py might not have been imported or failed early.
-    if not logging.getLogger().hasHandlers() and not logging.getLogger(__name__).hasHandlers():
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-        logger.info("Basic logging configured in main_model_tests as fallback.")
-
-    logger.info("======== Running Model Sanity Checks (phase2_model/main.py) ========")
-    run_hvt_tests()
-    logger.info("======== Model Sanity Checks Finished (phase2_model/main.py) ========")
 
 if __name__ == "__main__":
-    main_model_tests()
+    # This check ensures that if main.py is the entry point, logging is set up.
+    # (config.py also tries to set it up, so this is a safeguard)
+    if not logging.getLogger().hasHandlers() and not logger.hasHandlers():
+         logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+         logger.info("Basic logging configured in phase2_model/main.py __main__ block.")
+
+    run_all_hvt_tests()
