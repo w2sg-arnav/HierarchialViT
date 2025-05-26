@@ -48,3 +48,15 @@
 2025-05-26 16:03:16 - __main__ - INFO - [main_pretrain_script:178] - Starting/Resuming SimCLR pre-training from epoch 21 up to 80 epochs.
 2025-05-26 16:03:16 - phase3_pretraining.pretrain.trainer - INFO - [_initialize_scheduler_if_needed:86] - Resuming: Scheduler will be initialized with last_step/epoch around: 5419
 2025-05-26 16:03:16 - phase3_pretraining.pretrain.trainer - INFO - [_initialize_scheduler_if_needed:106] - Scheduler: WarmupCosine (WarmupSteps=2710, TotalTrainSteps=21680). Last epoch for init: 5420
+2025-05-26 16:10:32 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:168] - E21: Applying leftover gradients from accumulation (1 steps).
+2025-05-26 16:10:32 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:188] - Epoch 21 Training Summary: AvgLoss=2.2436, OptSteps=136, FinalLR=4.73e-04
+2025-05-26 16:10:32 - __main__ - INFO - [main_pretrain_script:196] - SSL Epoch 21/80 | Duration: 436.78s | Samples/sec: 19.85 | Avg Loss: 2.2436 | LR: 4.73e-04
+2025-05-26 16:10:33 - __main__ - DEBUG - [main_pretrain_script:212] - CUDA Mem E21: Alloc 4325.1MB, MaxAlloc 9433.7MB
+2025-05-26 16:17:57 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:168] - E22: Applying leftover gradients from accumulation (1 steps).
+2025-05-26 16:17:58 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:188] - Epoch 22 Training Summary: AvgLoss=2.0935, OptSteps=136, FinalLR=4.70e-04
+2025-05-26 16:17:58 - __main__ - INFO - [main_pretrain_script:196] - SSL Epoch 22/80 | Duration: 445.04s | Samples/sec: 19.49 | Avg Loss: 2.0935 | LR: 4.70e-04
+2025-05-26 16:17:58 - __main__ - DEBUG - [main_pretrain_script:212] - CUDA Mem E22: Alloc 4325.1MB, MaxAlloc 9435.2MB
+2025-05-26 16:25:19 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:168] - E23: Applying leftover gradients from accumulation (1 steps).
+2025-05-26 16:25:20 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:188] - Epoch 23 Training Summary: AvgLoss=2.1128, OptSteps=136, FinalLR=4.67e-04
+2025-05-26 16:25:20 - __main__ - INFO - [main_pretrain_script:196] - SSL Epoch 23/80 | Duration: 442.22s | Samples/sec: 19.61 | Avg Loss: 2.1128 | LR: 4.67e-04
+2025-05-26 16:25:20 - __main__ - DEBUG - [main_pretrain_script:212] - CUDA Mem E23: Alloc 4325.1MB, MaxAlloc 9435.2MB
