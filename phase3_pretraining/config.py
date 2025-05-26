@@ -91,7 +91,7 @@ config = {
 
     # SimCLR Pre-training Specific
     "pretrain_img_size": (448, 448), # Image size for SimCLR pre-training
-    "pretrain_epochs": 80,          # Number of epochs for SimCLR
+    "pretrain_epochs": 50,          # Number of epochs for SimCLR
     "pretrain_batch_size": 32,       # Effective batch size (adjust with accumulation)
     "accumulation_steps": 2,         # Gradient accumulation (effective_batch_size = 32*2=64)
     "pretrain_lr": 5e-4,             # Base learning rate for SimCLR
@@ -113,7 +113,7 @@ config = {
 
     # Linear Probing Configuration (for evaluating features during pre-training)
     "evaluate_every_n_epochs": 10,    # How often to run linear probing
-    "linear_probe_epochs": 20,       # Epochs to train the linear probe classifier
+    "linear_probe_epochs": 10,       # Epochs to train the linear probe classifier
     "linear_probe_lr": 0.1,
     "probe_optimizer": "SGD",        # "SGD" or "AdamW" for probe
     "probe_momentum": 0.9,           # For SGD probe optimizer
