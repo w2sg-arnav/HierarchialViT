@@ -173,3 +173,4 @@ if __name__ == "__main__":
          logger.info("Basic logging configured in phase2_model/main.py __main__ block.")
 
     run_all_hvt_tests()
+    

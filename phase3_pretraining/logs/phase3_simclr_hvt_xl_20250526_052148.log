@@ -52,3 +52,163 @@
 2025-05-26 05:36:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 2 Training Summary: AvgLoss=3.1934, OptSteps=136, FinalLR=5.02e-05
 2025-05-26 05:36:44 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 2/50 | Duration: 444.62s | Samples/sec: 19.50 | Avg Loss: 3.1934 | LR: 5.02e-05
 2025-05-26 05:36:44 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E2: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 05:44:05 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E3: Applying remaining gradients from accumulation.
+2025-05-26 05:44:05 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 3 Training Summary: AvgLoss=3.0795, OptSteps=136, FinalLR=7.53e-05
+2025-05-26 05:44:05 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 3/50 | Duration: 440.83s | Samples/sec: 19.67 | Avg Loss: 3.0795 | LR: 7.53e-05
+2025-05-26 05:44:05 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E3: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 05:51:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E4: Applying remaining gradients from accumulation.
+2025-05-26 05:51:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 4 Training Summary: AvgLoss=3.0746, OptSteps=136, FinalLR=1.00e-04
+2025-05-26 05:51:28 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 4/50 | Duration: 443.08s | Samples/sec: 19.57 | Avg Loss: 3.0746 | LR: 1.00e-04
+2025-05-26 05:51:28 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E4: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 05:58:48 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E5: Applying remaining gradients from accumulation.
+2025-05-26 05:58:48 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 5 Training Summary: AvgLoss=3.0598, OptSteps=136, FinalLR=1.25e-04
+2025-05-26 05:58:48 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 5/50 | Duration: 440.38s | Samples/sec: 19.69 | Avg Loss: 3.0598 | LR: 1.25e-04
+2025-05-26 05:58:48 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E5: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 06:06:08 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E6: Applying remaining gradients from accumulation.
+2025-05-26 06:06:08 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 6 Training Summary: AvgLoss=3.0181, OptSteps=136, FinalLR=1.51e-04
+2025-05-26 06:06:08 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 6/50 | Duration: 439.77s | Samples/sec: 19.72 | Avg Loss: 3.0181 | LR: 1.51e-04
+2025-05-26 06:06:08 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E6: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 06:13:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E7: Applying remaining gradients from accumulation.
+2025-05-26 06:13:29 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 7 Training Summary: AvgLoss=2.9631, OptSteps=136, FinalLR=1.76e-04
+2025-05-26 06:13:29 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 7/50 | Duration: 440.58s | Samples/sec: 19.68 | Avg Loss: 2.9631 | LR: 1.76e-04
+2025-05-26 06:13:29 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E7: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 06:20:52 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E8: Applying remaining gradients from accumulation.
+2025-05-26 06:20:52 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 8 Training Summary: AvgLoss=2.8064, OptSteps=136, FinalLR=2.01e-04
+2025-05-26 06:20:52 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 8/50 | Duration: 443.13s | Samples/sec: 19.57 | Avg Loss: 2.8064 | LR: 2.01e-04
+2025-05-26 06:20:52 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E8: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 06:28:15 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E9: Applying remaining gradients from accumulation.
+2025-05-26 06:28:15 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 9 Training Summary: AvgLoss=2.6386, OptSteps=136, FinalLR=2.26e-04
+2025-05-26 06:28:15 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 9/50 | Duration: 443.18s | Samples/sec: 19.57 | Avg Loss: 2.6386 | LR: 2.26e-04
+2025-05-26 06:28:15 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E9: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 06:35:37 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E10: Applying remaining gradients from accumulation.
+2025-05-26 06:35:37 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 10 Training Summary: AvgLoss=2.6017, OptSteps=136, FinalLR=2.51e-04
+2025-05-26 06:35:37 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 10/50 | Duration: 441.87s | Samples/sec: 19.63 | Avg Loss: 2.6017 | LR: 2.51e-04
+2025-05-26 06:35:37 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:168] - --- Starting Linear Probe (after SSL Epoch 10) ---
+2025-05-26 06:35:37 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:173] - Probe E10: Feature dim for linear classifier: 1536
+2025-05-26 06:56:58 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:202] - Linear Probe (SSL E10) Validation Accuracy: 20.35% (93/457)
+2025-05-26 06:56:58 - __main__ - INFO - [main_pretrain_script:166] - New best probe accuracy: 20.35% (SSL Epoch 10). Saving best model.
+2025-05-26 06:56:58 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:215] - Saving checkpoint to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth...
+2025-05-26 06:57:03 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:228] - Checkpoint saved successfully to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+2025-05-26 06:57:03 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E10: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:04:26 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E11: Applying remaining gradients from accumulation.
+2025-05-26 07:04:26 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 11 Training Summary: AvgLoss=2.6175, OptSteps=136, FinalLR=2.76e-04
+2025-05-26 07:04:26 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 11/50 | Duration: 443.36s | Samples/sec: 19.56 | Avg Loss: 2.6175 | LR: 2.76e-04
+2025-05-26 07:04:26 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E11: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:11:51 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E12: Applying remaining gradients from accumulation.
+2025-05-26 07:11:52 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 12 Training Summary: AvgLoss=2.4976, OptSteps=136, FinalLR=3.01e-04
+2025-05-26 07:11:52 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 12/50 | Duration: 445.30s | Samples/sec: 19.47 | Avg Loss: 2.4976 | LR: 3.01e-04
+2025-05-26 07:11:52 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E12: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:19:14 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E13: Applying remaining gradients from accumulation.
+2025-05-26 07:19:14 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 13 Training Summary: AvgLoss=2.4917, OptSteps=136, FinalLR=3.26e-04
+2025-05-26 07:19:14 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 13/50 | Duration: 442.54s | Samples/sec: 19.60 | Avg Loss: 2.4917 | LR: 3.26e-04
+2025-05-26 07:19:14 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E13: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:26:35 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E14: Applying remaining gradients from accumulation.
+2025-05-26 07:26:36 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 14 Training Summary: AvgLoss=2.4718, OptSteps=136, FinalLR=3.51e-04
+2025-05-26 07:26:36 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 14/50 | Duration: 441.44s | Samples/sec: 19.64 | Avg Loss: 2.4718 | LR: 3.51e-04
+2025-05-26 07:26:36 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E14: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:33:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E15: Applying remaining gradients from accumulation.
+2025-05-26 07:33:58 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 15 Training Summary: AvgLoss=2.4082, OptSteps=136, FinalLR=3.76e-04
+2025-05-26 07:33:58 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 15/50 | Duration: 441.91s | Samples/sec: 19.62 | Avg Loss: 2.4082 | LR: 3.76e-04
+2025-05-26 07:33:58 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E15: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:41:21 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E16: Applying remaining gradients from accumulation.
+2025-05-26 07:41:22 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 16 Training Summary: AvgLoss=2.4046, OptSteps=136, FinalLR=4.01e-04
+2025-05-26 07:41:22 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 16/50 | Duration: 444.09s | Samples/sec: 19.53 | Avg Loss: 2.4046 | LR: 4.01e-04
+2025-05-26 07:41:22 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E16: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:48:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E17: Applying remaining gradients from accumulation.
+2025-05-26 07:48:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 17 Training Summary: AvgLoss=2.3709, OptSteps=136, FinalLR=4.27e-04
+2025-05-26 07:48:44 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 17/50 | Duration: 442.83s | Samples/sec: 19.58 | Avg Loss: 2.3709 | LR: 4.27e-04
+2025-05-26 07:48:44 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E17: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 07:56:09 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E18: Applying remaining gradients from accumulation.
+2025-05-26 07:56:09 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 18 Training Summary: AvgLoss=2.2673, OptSteps=136, FinalLR=4.52e-04
+2025-05-26 07:56:09 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 18/50 | Duration: 444.86s | Samples/sec: 19.49 | Avg Loss: 2.2673 | LR: 4.52e-04
+2025-05-26 07:56:09 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E18: Alloc 3244.2MB, MaxAlloc 8350.4MB
+2025-05-26 08:03:30 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E19: Applying remaining gradients from accumulation.
+2025-05-26 08:03:31 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 19 Training Summary: AvgLoss=2.3526, OptSteps=136, FinalLR=4.77e-04
+2025-05-26 08:03:31 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 19/50 | Duration: 441.43s | Samples/sec: 19.65 | Avg Loss: 2.3526 | LR: 4.77e-04
+2025-05-26 08:03:31 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E19: Alloc 3244.2MB, MaxAlloc 8352.1MB
+2025-05-26 08:10:55 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E20: Applying remaining gradients from accumulation.
+2025-05-26 08:10:55 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 20 Training Summary: AvgLoss=2.2918, OptSteps=136, FinalLR=5.00e-04
+2025-05-26 08:10:55 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 20/50 | Duration: 444.29s | Samples/sec: 19.52 | Avg Loss: 2.2918 | LR: 5.00e-04
+2025-05-26 08:10:55 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:168] - --- Starting Linear Probe (after SSL Epoch 20) ---
+2025-05-26 08:10:55 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:173] - Probe E20: Feature dim for linear classifier: 1536
+2025-05-26 08:32:18 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:202] - Linear Probe (SSL E20) Validation Accuracy: 25.16% (115/457)
+2025-05-26 08:32:18 - __main__ - INFO - [main_pretrain_script:166] - New best probe accuracy: 25.16% (SSL Epoch 20). Saving best model.
+2025-05-26 08:32:18 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:215] - Saving checkpoint to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth...
+2025-05-26 08:32:28 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:228] - Checkpoint saved successfully to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+2025-05-26 08:32:28 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:215] - Saving checkpoint to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_epoch_20.pth...
+2025-05-26 08:32:33 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:228] - Checkpoint saved successfully to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_epoch_20.pth
+2025-05-26 08:32:33 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E20: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 08:39:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E21: Applying remaining gradients from accumulation.
+2025-05-26 08:39:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 21 Training Summary: AvgLoss=2.2559, OptSteps=136, FinalLR=5.00e-04
+2025-05-26 08:39:57 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 21/50 | Duration: 444.10s | Samples/sec: 19.53 | Avg Loss: 2.2559 | LR: 5.00e-04
+2025-05-26 08:39:57 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E21: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 08:47:19 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E22: Applying remaining gradients from accumulation.
+2025-05-26 08:47:19 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 22 Training Summary: AvgLoss=2.1802, OptSteps=136, FinalLR=4.99e-04
+2025-05-26 08:47:19 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 22/50 | Duration: 442.24s | Samples/sec: 19.61 | Avg Loss: 2.1802 | LR: 4.99e-04
+2025-05-26 08:47:19 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E22: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 08:54:42 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E23: Applying remaining gradients from accumulation.
+2025-05-26 08:54:42 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 23 Training Summary: AvgLoss=2.1419, OptSteps=136, FinalLR=4.98e-04
+2025-05-26 08:54:42 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 23/50 | Duration: 442.99s | Samples/sec: 19.58 | Avg Loss: 2.1419 | LR: 4.98e-04
+2025-05-26 08:54:42 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E23: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:02:05 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E24: Applying remaining gradients from accumulation.
+2025-05-26 09:02:05 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 24 Training Summary: AvgLoss=2.0898, OptSteps=136, FinalLR=4.97e-04
+2025-05-26 09:02:05 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 24/50 | Duration: 442.87s | Samples/sec: 19.58 | Avg Loss: 2.0898 | LR: 4.97e-04
+2025-05-26 09:02:05 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E24: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:09:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E25: Applying remaining gradients from accumulation.
+2025-05-26 09:09:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 25 Training Summary: AvgLoss=2.0047, OptSteps=136, FinalLR=4.95e-04
+2025-05-26 09:09:28 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 25/50 | Duration: 442.96s | Samples/sec: 19.58 | Avg Loss: 2.0047 | LR: 4.95e-04
+2025-05-26 09:09:28 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E25: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:16:52 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E26: Applying remaining gradients from accumulation.
+2025-05-26 09:16:53 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 26 Training Summary: AvgLoss=1.9421, OptSteps=136, FinalLR=4.93e-04
+2025-05-26 09:16:53 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 26/50 | Duration: 444.46s | Samples/sec: 19.51 | Avg Loss: 1.9421 | LR: 4.93e-04
+2025-05-26 09:16:53 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E26: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:24:14 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E27: Applying remaining gradients from accumulation.
+2025-05-26 09:24:14 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 27 Training Summary: AvgLoss=1.8909, OptSteps=136, FinalLR=4.90e-04
+2025-05-26 09:24:14 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 27/50 | Duration: 441.27s | Samples/sec: 19.65 | Avg Loss: 1.8909 | LR: 4.90e-04
+2025-05-26 09:24:14 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E27: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:31:36 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E28: Applying remaining gradients from accumulation.
+2025-05-26 09:31:36 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 28 Training Summary: AvgLoss=1.8491, OptSteps=136, FinalLR=4.87e-04
+2025-05-26 09:31:36 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 28/50 | Duration: 442.35s | Samples/sec: 19.60 | Avg Loss: 1.8491 | LR: 4.87e-04
+2025-05-26 09:31:36 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E28: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:38:59 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E29: Applying remaining gradients from accumulation.
+2025-05-26 09:38:59 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 29 Training Summary: AvgLoss=1.8797, OptSteps=136, FinalLR=4.84e-04
+2025-05-26 09:38:59 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 29/50 | Duration: 442.75s | Samples/sec: 19.59 | Avg Loss: 1.8797 | LR: 4.84e-04
+2025-05-26 09:38:59 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E29: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 09:46:23 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E30: Applying remaining gradients from accumulation.
+2025-05-26 09:46:23 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 30 Training Summary: AvgLoss=1.8530, OptSteps=136, FinalLR=4.81e-04
+2025-05-26 09:46:23 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 30/50 | Duration: 444.45s | Samples/sec: 19.51 | Avg Loss: 1.8530 | LR: 4.81e-04
+2025-05-26 09:46:23 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:168] - --- Starting Linear Probe (after SSL Epoch 30) ---
+2025-05-26 09:46:23 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:173] - Probe E30: Feature dim for linear classifier: 1536
+2025-05-26 10:07:46 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:202] - Linear Probe (SSL E30) Validation Accuracy: 41.79% (191/457)
+2025-05-26 10:07:46 - __main__ - INFO - [main_pretrain_script:166] - New best probe accuracy: 41.79% (SSL Epoch 30). Saving best model.
+2025-05-26 10:07:46 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:215] - Saving checkpoint to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth...
+2025-05-26 10:07:57 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:228] - Checkpoint saved successfully to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+2025-05-26 10:07:57 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E30: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:15:22 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E31: Applying remaining gradients from accumulation.
+2025-05-26 10:15:23 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 31 Training Summary: AvgLoss=1.7711, OptSteps=136, FinalLR=4.77e-04
+2025-05-26 10:15:23 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 31/50 | Duration: 446.00s | Samples/sec: 19.44 | Avg Loss: 1.7711 | LR: 4.77e-04
+2025-05-26 10:15:23 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E31: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:22:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E32: Applying remaining gradients from accumulation.
+2025-05-26 10:22:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 32 Training Summary: AvgLoss=1.7640, OptSteps=136, FinalLR=4.72e-04
+2025-05-26 10:22:44 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 32/50 | Duration: 441.59s | Samples/sec: 19.64 | Avg Loss: 1.7640 | LR: 4.72e-04
+2025-05-26 10:22:44 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E32: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:30:11 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E33: Applying remaining gradients from accumulation.
+2025-05-26 10:30:12 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 33 Training Summary: AvgLoss=1.7847, OptSteps=136, FinalLR=4.68e-04
+2025-05-26 10:30:12 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 33/50 | Duration: 447.49s | Samples/sec: 19.38 | Avg Loss: 1.7847 | LR: 4.68e-04
+2025-05-26 10:30:12 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E33: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:37:33 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E34: Applying remaining gradients from accumulation.
+2025-05-26 10:37:34 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 34 Training Summary: AvgLoss=1.7068, OptSteps=136, FinalLR=4.63e-04
+2025-05-26 10:37:34 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 34/50 | Duration: 442.01s | Samples/sec: 19.62 | Avg Loss: 1.7068 | LR: 4.63e-04
+2025-05-26 10:37:34 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E34: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:44:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E35: Applying remaining gradients from accumulation.
+2025-05-26 10:44:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 35 Training Summary: AvgLoss=1.6762, OptSteps=136, FinalLR=4.57e-04
+2025-05-26 10:44:57 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 35/50 | Duration: 443.31s | Samples/sec: 19.56 | Avg Loss: 1.6762 | LR: 4.57e-04
+2025-05-26 10:44:57 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E35: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:52:22 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E36: Applying remaining gradients from accumulation.
+2025-05-26 10:52:22 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 36 Training Summary: AvgLoss=1.6077, OptSteps=136, FinalLR=4.51e-04
+2025-05-26 10:52:22 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 36/50 | Duration: 444.91s | Samples/sec: 19.49 | Avg Loss: 1.6077 | LR: 4.51e-04
+2025-05-26 10:52:22 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E36: Alloc 3244.2MB, MaxAlloc 8356.6MB
+2025-05-26 10:59:46 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:141] - E37: Applying remaining gradients from accumulation.
+2025-05-26 10:59:46 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:159] - Epoch 37 Training Summary: AvgLoss=1.6171, OptSteps=136, FinalLR=4.45e-04
+2025-05-26 10:59:46 - __main__ - INFO - [main_pretrain_script:159] - SSL Epoch 37/50 | Duration: 444.31s | Samples/sec: 19.52 | Avg Loss: 1.6171 | LR: 4.45e-04
+2025-05-26 10:59:46 - __main__ - DEBUG - [main_pretrain_script:175] - CUDA Mem E37: Alloc 3244.2MB, MaxAlloc 8356.6MB
