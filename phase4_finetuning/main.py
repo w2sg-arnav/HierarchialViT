@@ -7,10 +7,7 @@ import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.cuda.amp import GradScaler
-from torch.optim.lr_scheduler import (
-    ReduceLROnPlateau, LinearLR,
-    SequentialLR, CosineAnnealingLR, LambdaLR
-)
+from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR, SequentialLR, LinearLR
 import argparse
 import yaml
 import torch.nn.functional as F
@@ -20,32 +17,23 @@ from typing import Tuple, Optional, Dict, Any, List
 import traceback
 from datetime import datetime
 
-# --- Global Logger (initialized in main_execution_logic()) ---
 logger: Optional[logging.Logger] = None
 
-# --- Path Setup (Minimal, relies on `python -m`) ---
-# When running as `python -m phase4_finetuning.main` from the project root (e.g., cvpr25/),
-# Python handles the path for imports within phase4_finetuning and for sibling packages like phase2_model.
-
-# --- Project Imports ---
 try:
-    from .config import config as base_finetune_config # Relative import for this package's config
+    from .config import config as base_finetune_config
     from .dataset import SARCLD2024Dataset
     from .utils.augmentations import FinetuneAugmentation
     from .utils.logging_setup import setup_logging
     from .finetune.trainer import Finetuner
-
-    # Import HVT from Phase 2 (sibling package)
     from phase2_model.models.hvt import DiseaseAwareHVT, create_disease_aware_hvt
 except ImportError as e_imp:
-    # Basic print for critical import errors if logging isn't even set up
-    print(f"CRITICAL IMPORT ERROR in phase4_main.py: {e_imp}. Check PYTHONPATH and module paths.", file=sys.stderr)
-    print("Ensure you are running from the project root (e.g., 'cvpr25/') using 'python -m phase4_finetuning.main'", file=sys.stderr)
-    traceback.print_exc()
-    sys.exit(1)
+    print(f"CRITICAL IMPORT ERROR in phase4_main.py: {e_imp}.", file=sys.stderr); traceback.print_exc(); sys.exit(1)
 
+# --- Helper Functions (get_cosine_schedule_with_warmup_step, load_config_from_yaml_or_default, parse_arguments, set_global_seed, _interpolate_positional_embedding, load_and_prepare_hvt_model) ---
+# These functions remain IDENTICAL to the previous complete main.py I provided.
+# For brevity, I'm not repeating them here. Ensure they are present.
+# Key: load_and_prepare_hvt_model should correctly re-initialize the head.
 
-# --- Helper Functions ---
 def get_cosine_schedule_with_warmup_step(optimizer: torch.optim.Optimizer, num_warmup_steps: int,
                                     num_training_steps: int, num_cycles: float = 0.5, last_epoch: int = -1):
     _local_logger_sched = logging.getLogger(f"{__name__}.get_cosine_schedule_with_warmup_step")
@@ -64,14 +52,11 @@ def load_config_from_yaml_or_default(yaml_config_path: Optional[str] = None) -> 
             with open(yaml_config_path, 'r') as f: yaml_override_config = yaml.safe_load(f)
             if yaml_override_config and isinstance(yaml_override_config, dict):
                 config_to_use.update(yaml_override_config)
-                # Use a temporary basic logger if main logger isn't set up yet
                 temp_logger = logging.getLogger(f"{__name__}.config_loader")
                 if not temp_logger.hasHandlers(): temp_logger.addHandler(logging.StreamHandler(sys.stdout))
                 temp_logger.info(f"Loaded and applied config overrides from YAML: {yaml_config_path}")
-        except Exception as e_yaml:
-            print(f"WARNING (config_loader): Could not load/parse YAML {yaml_config_path}: {e_yaml}. Using defaults.", file=sys.stderr)
-    elif yaml_config_path:
-        print(f"WARNING (config_loader): Specified YAML config {yaml_config_path} not found. Using defaults.", file=sys.stderr)
+        except Exception as e_yaml: print(f"WARNING (config_loader): Could not load/parse YAML {yaml_config_path}: {e_yaml}. Using defaults.", file=sys.stderr)
+    elif yaml_config_path: print(f"WARNING (config_loader): Specified YAML config {yaml_config_path} not found. Using defaults.", file=sys.stderr)
     return config_to_use
 
 def parse_arguments() -> argparse.Namespace:
@@ -82,7 +67,7 @@ def parse_arguments() -> argparse.Namespace:
 def set_global_seed(seed_value: int):
     torch.manual_seed(seed_value); np.random.seed(seed_value)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed_value)
-    if logger: logger.info(f"Global random seed set to: {seed_value}") # Use logger if initialized
+    if logger: logger.info(f"Global random seed set to: {seed_value}")
 
 def _interpolate_positional_embedding(
     checkpoint_pos_embed: torch.Tensor, model_pos_embed_param: nn.Parameter,
@@ -135,9 +120,9 @@ def load_and_prepare_hvt_model(hvt_model_instance: DiseaseAwareHVT, cfg: Dict[st
                 current_model_sd = hvt_model_instance.state_dict()
                 new_sd_for_backbone = OrderedDict()
                 ssl_run_cfg_snapshot = checkpoint.get('run_config_snapshot', {})
-                ssl_img_size_val = ssl_run_cfg_snapshot.get('pretrain_img_size', cfg["img_size"]) # Fallback to current finetune size
+                ssl_img_size_val = ssl_run_cfg_snapshot.get('pretrain_img_size', cfg.get("ssl_pretrain_img_size_fallback", cfg["img_size"]))
                 ssl_img_size_tuple = tuple(ssl_img_size_val)
-                if ssl_img_size_val == cfg["img_size"]: _local_logger_load.info(f"SSL and Finetune img_size match: {ssl_img_size_tuple}. No PE interpolation if patch counts same.")
+                if ssl_img_size_tuple == tuple(cfg["img_size"]): _local_logger_load.info(f"SSL and Finetune img_size match: {ssl_img_size_tuple}. No PE interpolation if patch counts same.")
                 else: _local_logger_load.info(f"SSL img_size: {ssl_img_size_tuple}, Finetune img_size: {cfg['img_size']}. PE interpolation may occur.")
 
                 loaded_count = 0; pe_interp_count = 0; head_skip_count = 0
@@ -183,7 +168,7 @@ def main_execution_logic():
     final_log_filename = f"{log_file_base}_{run_ts}.log"
 
     root_logger_obj = logging.getLogger()
-    if root_logger_obj.hasHandlers(): # Clear any pre-existing handlers on root
+    if root_logger_obj.hasHandlers():
         for handler in root_logger_obj.handlers[:]: root_logger_obj.removeHandler(handler); handler.close()
     setup_logging(log_file_name=final_log_filename, log_dir=abs_log_dir, log_level=logging.DEBUG, logger_name=None, run_timestamp=run_ts)
     logger = logging.getLogger(__name__)
@@ -200,28 +185,24 @@ def main_execution_logic():
         try: torch.set_float32_matmul_precision(cfg["matmul_precision"])
         except Exception as e: logger.warning(f"Failed to set matmul_precision: {e}")
 
-    # Datasets and DataLoaders
     dataset_args = {"root_dir": cfg["data_root"], "img_size": tuple(cfg["img_size"]), "train_split_ratio": cfg["train_split_ratio"], "normalize_for_model": cfg["normalize_data"], "original_dataset_name": cfg["original_dataset_name"], "augmented_dataset_name": cfg.get("augmented_dataset_name", None), "random_seed": cfg["seed"]}
     train_dataset = SARCLD2024Dataset(**dataset_args, split="train"); val_dataset = SARCLD2024Dataset(**dataset_args, split="val")
     class_names = train_dataset.get_class_names()
     sampler = None
     if cfg.get("use_weighted_sampler", False):
-        class_weights = train_dataset.get_class_weights()
-        if class_weights is not None and hasattr(train_dataset, 'current_split_labels') and len(train_dataset.current_split_labels) > 0:
+        class_weights = train_dataset.get_class_weights();
+        if class_weights is not None and hasattr(train_dataset, 'current_split_labels') and len(train_dataset.current_split_labels)>0:
             sample_weights = torch.zeros(len(train_dataset.current_split_labels));
-            for i, label_idx in enumerate(train_dataset.current_split_labels): sample_weights[i] = class_weights[label_idx]
-            sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
-            logger.info("Using WeightedRandomSampler for training.")
-
+            for i, label_idx in enumerate(train_dataset.current_split_labels): sample_weights[i]=class_weights[label_idx]
+            sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights),replacement=True); logger.info("Using WeightedRandomSampler.")
     loader_args = {"num_workers": cfg.get('num_workers',4), "pin_memory": (device=='cuda'), "persistent_workers": (device=='cuda' and cfg.get('num_workers',4)>0)}
     if cfg.get('num_workers',4) > 0 and cfg.get('prefetch_factor') is not None : loader_args["prefetch_factor"] = cfg['prefetch_factor']
     train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size"], sampler=sampler, shuffle=(sampler is None), drop_last=True, **loader_args)
     val_loader = DataLoader(val_dataset, batch_size=cfg["batch_size"], shuffle=False, drop_last=False, **loader_args)
     logger.info(f"Dataloaders created. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
 
-    # Model Instantiation and Weight Loading
     hvt_model_instance = create_disease_aware_hvt(current_img_size=tuple(cfg["img_size"]), num_classes=cfg["num_classes"], model_params_dict=cfg['hvt_params_for_model_init'])
-    model = load_and_prepare_hvt_model(hvt_model_instance, cfg, device) # Corrected: pass model instance
+    model = load_and_prepare_hvt_model(hvt_model_instance, cfg, device)
     total_params = sum(p.numel() for p in model.parameters()); trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model ready. Total params: {total_params:,}, Trainable params: {trainable_params:,}")
 
@@ -234,44 +215,43 @@ def main_execution_logic():
     loss_cls_weights = train_dataset.get_class_weights().to(device) if cfg.get("use_weighted_loss", False) and not cfg.get("use_weighted_sampler", False) and train_dataset.get_class_weights() is not None else None
     criterion = nn.CrossEntropyLoss(weight=loss_cls_weights, label_smoothing=cfg.get("loss_label_smoothing", 0.0))
 
-    # Optimizer Setup
-    current_freeze_target_epochs = cfg.get("freeze_backbone_epochs", 0)
-    head_module_name = "classifier_head" # Specific to DiseaseAwareHVT
+    # --- Optimizer Setup ---
+    freeze_backbone_epochs_cfg = cfg.get("freeze_backbone_epochs", 0)
+    head_module_name = "classifier_head"
     
-    param_groups_for_optimizer = []
-    base_lr = cfg["learning_rate"]
-    head_lr_mult = cfg.get("head_lr_multiplier", 1.0)
-    wd = cfg.get("weight_decay", 0.01) # Default WD for all groups unless specified otherwise
+    base_lr_cfg = cfg["learning_rate"] # This is the base LR, used for backbone if/when unfrozen
+    head_lr_cfg = base_lr_cfg * cfg.get("head_lr_multiplier", 1.0)
+    backbone_unfreeze_lr = base_lr_cfg * cfg.get("unfreeze_backbone_lr_factor", 1.0) # LR for backbone after unfreezing
+    wd_cfg = cfg.get("weight_decay", 0.01)
+    optim_common_kwargs = cfg.get("optimizer_params", {})
 
-    # Default: all parameters are part of the 'backbone' group with base_lr
-    all_params_dict = {name: param for name, param in model.named_parameters() if param.requires_grad}
-    backbone_params_list = [p for n, p in all_params_dict.items() if not n.startswith(head_module_name + ".")]
-    head_params_list = [p for n, p in all_params_dict.items() if n.startswith(head_module_name + ".")]
-
-    if head_params_list:
-        param_groups_for_optimizer.append({'params': head_params_list, 'lr': base_lr * head_lr_mult, 'name': 'head', 'weight_decay': wd})
-    if backbone_params_list:
-        param_groups_for_optimizer.append({'params': backbone_params_list, 'lr': base_lr, 'name': 'backbone', 'weight_decay': wd})
-
-    if current_freeze_target_epochs > 0:
-        logger.info(f"Optimizer setup: Backbone LR set to 0 for the first {current_freeze_target_epochs} epochs (head LR: {base_lr * head_lr_mult:.2e}).")
-        for pg in param_groups_for_optimizer:
-            if pg['name'] == 'backbone': pg['lr'] = 0.0 # Freeze by setting LR to 0
+    param_groups = []
+    # Always add head parameters, they are trainable from the start
+    head_params = [p for n, p in model.named_parameters() if n.startswith(head_module_name + ".")]
+    if head_params:
+        for p in head_params: p.requires_grad = True # Ensure head is trainable
+        param_groups.append({'params': head_params, 'lr': head_lr_cfg, 'name': 'head', 'weight_decay': wd_cfg})
     else:
-        logger.info(f"Optimizer setup: Training all specified parameters. Head LR: {base_lr * head_lr_mult:.2e}, Backbone LR: {base_lr:.2e}.")
+        logger.warning("No parameters found for the head module. Check model structure and head_module_name.")
 
-    if not param_groups_for_optimizer: logger.critical("No parameters for optimizer!"); sys.exit(1)
+    # Handle backbone parameters based on freezing strategy
+    backbone_params = [p for n, p in model.named_parameters() if not n.startswith(head_module_name + ".")]
+    if backbone_params:
+        initial_backbone_lr = 0.0 if freeze_backbone_epochs_cfg > 0 else backbone_unfreeze_lr # Start at 0 if frozen
+        for p in backbone_params:
+            p.requires_grad = (freeze_backbone_epochs_cfg == 0) # Only requires_grad if not freezing
+        param_groups.append({'params': backbone_params, 'lr': initial_backbone_lr, 'name': 'backbone', 'weight_decay': wd_cfg})
     
-    optim_name_cfg = cfg.get("optimizer", "AdamW").lower(); opt_common_kwargs = cfg.get("optimizer_params", {})
-    if optim_name_cfg == "adamw": optimizer = torch.optim.AdamW(param_groups_for_optimizer, **opt_common_kwargs)
-    elif optim_name_cfg == "sgd": opt_common_kwargs.setdefault('momentum', 0.9); optimizer = torch.optim.SGD(param_groups_for_optimizer, **opt_common_kwargs)
-    else: logger.warning(f"Unsupported opt. Default AdamW."); optimizer = torch.optim.AdamW(param_groups_for_optimizer, **opt_common_kwargs)
-    logger.info(f"Optimizer: {optimizer.__class__.__name__}.")
+    if not param_groups or all(len(pg['params'])==0 for pg in param_groups) : logger.critical("No parameters for optimizer after group setup!"); sys.exit(1)
+    
+    optim_name_cfg = cfg.get("optimizer", "AdamW").lower()
+    if optim_name_cfg == "adamw": optimizer = torch.optim.AdamW(param_groups, **optim_common_kwargs) # LR taken from groups
+    elif optim_name_cfg == "sgd": optim_common_kwargs.setdefault('momentum', 0.9); optimizer = torch.optim.SGD(param_groups, **optim_common_kwargs)
+    else: logger.warning(f"Unsupported optimizer. Default AdamW."); optimizer = torch.optim.AdamW(param_groups, **optim_common_kwargs)
+    logger.info(f"Optimizer: {optimizer.__class__.__name__}. Initial Group LRs: {[pg['lr'] for pg in optimizer.param_groups]}")
 
-
-    # Scheduler Setup
+    # --- Scheduler Setup ---
     scheduler = None; lr_scheduler_on_batch_flag = False
-    # ... (scheduler logic from your last main.py, ensure it's robust) ...
     sched_cfg_name = cfg.get("scheduler", "None").lower(); warmup_ep_cfg = cfg.get("warmup_epochs", 0)
     total_epochs_for_sched = cfg["epochs"]; eff_accum_steps_sched = max(1, cfg.get("accumulation_steps", 1))
     steps_per_epoch_for_sched = len(train_loader) // eff_accum_steps_sched
@@ -298,12 +278,11 @@ def main_execution_logic():
                               accumulation_steps=eff_accum_steps_sched, clip_grad_norm=cfg.get("clip_grad_norm"),
                               augmentations=augmentations_pipeline, num_classes=cfg["num_classes"])
 
-    # Training Loop
+    # --- Training Loop ---
     best_val_metric_val = 0.0 if cfg.get("metric_to_monitor_early_stopping", "f1_macro") != "val_loss" else float('inf')
     metric_to_watch = cfg.get("metric_to_monitor_early_stopping", "f1_macro")
     patience_val = cfg.get("early_stopping_patience", float('inf'))
     patience_count = 0; last_completed_ep = 0
-    
     abs_ckpt_save_dir = os.path.join(abs_log_dir, cfg.get("checkpoint_save_dir_name", "checkpoints"))
     os.makedirs(abs_ckpt_save_dir, exist_ok=True)
 
@@ -312,33 +291,34 @@ def main_execution_logic():
         for epoch_1_based in range(1, cfg["epochs"] + 1):
             last_completed_ep = epoch_1_based -1
             
-            if current_freeze_target_epochs > 0 and epoch_1_based == current_freeze_target_epochs + 1:
-                logger.info(f"Epoch {epoch_1_based}: Unfreezing HVT backbone and resetting optimizer parameter groups.")
+            if freeze_backbone_epochs_cfg > 0 and epoch_1_based == freeze_backbone_epochs_cfg + 1:
+                logger.info(f"Epoch {epoch_1_based}: Unfreezing HVT backbone layers.")
                 model_to_thaw = model._orig_mod if hasattr(model, '_orig_mod') and isinstance(model._orig_mod, nn.Module) else model
-                unfrozen_count = 0
                 
-                # Unfreeze backbone parameters
+                unfrozen_this_step_count = 0
                 for name, param in model_to_thaw.named_parameters():
-                    if not name.startswith(head_module_name + "."):
-                        if not param.requires_grad: param.requires_grad = True; unfrozen_count+=1
+                    if not name.startswith(head_module_name + "."): # Unfreeze backbone parameters
+                        if not param.requires_grad:
+                            param.requires_grad = True
+                            unfrozen_this_step_count += 1
                 
-                # Reconstruct optimizer parameter groups with new LRs for backbone
-                new_param_groups_for_optimizer = []
-                head_p_current = [p for n,p in model_to_thaw.named_parameters() if n.startswith(head_module_name + ".")] # Should already be requires_grad=True
-                if head_p_current: new_param_groups_for_optimizer.append({'params': head_p_current, 'lr': base_lr * head_lr_mult, 'name': 'head', 'weight_decay': wd})
-                
-                backbone_p_unfrozen = [p for n,p in model_to_thaw.named_parameters() if not n.startswith(head_module_name + ".") and p.requires_grad]
-                if backbone_p_unfrozen:
-                    backbone_actual_lr = base_lr * cfg.get("unfreeze_backbone_lr_factor", 1.0)
-                    new_param_groups_for_optimizer.append({'params': backbone_p_unfrozen, 'lr': backbone_actual_lr, 'name': 'backbone', 'weight_decay': wd})
-                
-                optimizer.param_groups = new_param_groups_for_optimizer
-                logger.info(f"{unfrozen_count} backbone params marked trainable. Optimizer groups reset. Backbone LR: {backbone_actual_lr:.2e}.")
-                trainable_params_after_thaw = sum(p.numel() for p in model.parameters() if p.requires_grad)
-                logger.info(f"Trainable params post-unfreeze: {trainable_params_after_thaw:,}")
+                # Update LR for the backbone group in the existing optimizer
+                updated_lr_for_backbone = False
+                for pg in optimizer.param_groups:
+                    if pg.get('name') == 'backbone':
+                        pg['lr'] = base_lr * cfg.get("unfreeze_backbone_lr_factor", 1.0)
+                        logger.info(f"Optimizer group 'backbone' LR set to {pg['lr']:.2e}.")
+                        updated_lr_for_backbone = True
+                        break
+                if not updated_lr_for_backbone and backbone_params_list : # Should not happen if backbone group was added with LR 0
+                     logger.error("Could not find 'backbone' param group to update LR after unfreezing. This is an issue.")
+
+                current_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+                logger.info(f"{unfrozen_this_step_count} backbone params newly set to requires_grad=True. Total trainable params now: {current_trainable_params:,}")
+
 
             finetuner_obj.train_one_epoch(train_loader, epoch_1_based, cfg["epochs"])
-            # ... (rest of epoch loop: validation, scheduler step, checkpointing, early stopping - as in your last provided main.py) ...
+            
             current_val_metric_for_decision = None
             if epoch_1_based % cfg.get("evaluate_every_n_epochs", 1) == 0 or epoch_1_based == cfg["epochs"]:
                 avg_val_loss, val_metrics_dict = finetuner_obj.validate_one_epoch(val_loader, class_names=class_names)
@@ -361,12 +341,11 @@ def main_execution_logic():
 
     except KeyboardInterrupt: logger.warning(f"Fine-tuning interrupted. Last completed epoch: {last_completed_ep}.")
     except Exception as e_fatal: logger.critical(f"Finetuning error at E{last_completed_ep + 1}: {e_fatal}", exc_info=True); sys.exit(1)
-    finally: # ... (final save logic as in your provided main.py) ...
+    finally:
         logger.info(f"Fine-tuning ended. Last completed epoch: {last_completed_ep}.")
         if 'finetuner_obj' in locals() and finetuner_obj is not None and cfg.get("final_model_filename"):
             finetuner_obj.save_model_checkpoint(os.path.join(abs_ckpt_save_dir, cfg["final_model_filename"]))
         logger.info(f"Fine-tuning summary: Best validation '{metric_to_watch}': {best_val_metric_val:.4f}")
-
 
 if __name__ == "__main__":
     try:
