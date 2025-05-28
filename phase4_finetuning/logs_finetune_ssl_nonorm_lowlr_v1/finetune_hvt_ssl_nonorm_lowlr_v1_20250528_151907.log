@@ -139,3 +139,15 @@
 2025-05-28 15:42:00 - __main__ - INFO - [main_execution_logic:465] - E12: New best! Val f1_macro: 0.3596
 2025-05-28 15:42:00 - __main__ - INFO - [main_execution_logic:478] - Epoch 12 completed in 241.93s.
 2025-05-28 15:42:00 - __main__ - DEBUG - [main_execution_logic:479] - CUDA Mem E12 End: Alloc 3161.3MB, Reserved 6628.0MB
+2025-05-28 15:45:38 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:114] - Epoch 13 training finished. Avg Loss: 1.5297, Final LR for epoch: 1.90e-05, Opt Steps: 228
+2025-05-28 15:45:55 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:182] - Validation finished. Avg Loss: 1.5257, accuracy: 0.4540, f1_macro: 0.3957, f1_weighted: 0.3945, precision_macro: 0.4714, precision_weighted: 0.4751, recall_macro: 0.4539, recall_weighted: 0.4540, f1_Bacterial_Blight: 0.3977, f1_Curl_Virus: 0.1652, f1_Healthy_Leaf: 0.2195, f1_Herbicide_Growth_Damage: 0.6030, f1_Leaf_Hopper_Jassids: 0.1877, f1_Leaf_Redding: 0.5677, f1_Leaf_Variegation: 0.6292
+2025-05-28 15:45:59 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:189] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_ssl_nonorm_lowlr_v1/checkpoints_ssl_nonorm_lowlr_v1/best_finetuned_hvt_ssl_nonorm_lowlr_v1.pth
+2025-05-28 15:45:59 - __main__ - INFO - [main_execution_logic:465] - E13: New best! Val f1_macro: 0.3957
+2025-05-28 15:45:59 - __main__ - INFO - [main_execution_logic:478] - Epoch 13 completed in 238.79s.
+2025-05-28 15:45:59 - __main__ - DEBUG - [main_execution_logic:479] - CUDA Mem E13 End: Alloc 3161.3MB, Reserved 6628.0MB
+2025-05-28 15:49:37 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:114] - Epoch 14 training finished. Avg Loss: 1.4828, Final LR for epoch: 1.87e-05, Opt Steps: 228
+2025-05-28 15:49:54 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:182] - Validation finished. Avg Loss: 1.5075, accuracy: 0.4710, f1_macro: 0.4195, f1_weighted: 0.4172, precision_macro: 0.5151, precision_weighted: 0.5192, recall_macro: 0.4723, recall_weighted: 0.4710, f1_Bacterial_Blight: 0.4336, f1_Curl_Virus: 0.2216, f1_Healthy_Leaf: 0.1905, f1_Herbicide_Growth_Damage: 0.6293, f1_Leaf_Hopper_Jassids: 0.2320, f1_Leaf_Redding: 0.5763, f1_Leaf_Variegation: 0.6532
+2025-05-28 15:49:57 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:189] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_ssl_nonorm_lowlr_v1/checkpoints_ssl_nonorm_lowlr_v1/best_finetuned_hvt_ssl_nonorm_lowlr_v1.pth
+2025-05-28 15:49:57 - __main__ - INFO - [main_execution_logic:465] - E14: New best! Val f1_macro: 0.4195
+2025-05-28 15:49:57 - __main__ - INFO - [main_execution_logic:478] - Epoch 14 completed in 238.58s.
+2025-05-28 15:49:57 - __main__ - DEBUG - [main_execution_logic:479] - CUDA Mem E14 End: Alloc 3161.3MB, Reserved 6628.0MB
