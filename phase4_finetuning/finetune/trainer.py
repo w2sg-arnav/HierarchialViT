@@ -26,7 +26,7 @@ class Finetuner:
                  clip_grad_norm: Optional[float] = None,
                  augmentations = None,
                  num_classes: int = 7,
-                 tta_enabled_val: bool = False # New flag for TTA
+                 tta_enabled_val: bool = False 
                  ):
         self.model = model.to(device)
         self.optimizer = optimizer
@@ -63,6 +63,7 @@ class Finetuner:
             labels = labels.to(self.device, non_blocking=(self.device == 'cuda'))
 
             if self.augmentations:
+                # Images are now [0,1] float from dataset, augmentations applied here
                 rgb_images = self.augmentations(rgb_images)
 
             loss_value_this_iteration = 0.0
@@ -116,20 +117,17 @@ class Finetuner:
     def validate_one_epoch(self, val_loader: torch.utils.data.DataLoader, class_names: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
         self.model.eval()
         total_val_loss = 0.0
-        all_final_outputs_list: List[torch.Tensor] = [] # Store final (potentially TTA-averaged) logits
+        all_final_outputs_list: List[torch.Tensor] = [] 
         all_labels_list: List[torch.Tensor] = []
         
         num_val_batches = len(val_loader)
         if num_val_batches == 0:
             logger.warning("Validation loader is empty. Returning zero metrics.")
-            # Ensure all expected metric keys are returned for consistency
             metrics = {"val_loss": 0.0, "accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0, 
                        "precision_macro":0.0, "precision_weighted": 0.0, "recall_macro":0.0, "recall_weighted":0.0}
-            # Add per-class F1s if class_names are provided
             if class_names:
                 for cn in class_names: metrics[f"f1_{cn.replace(' ', '_')}"] = 0.0
             return 0.0, metrics
-
 
         pbar_val = tqdm(val_loader, desc="Validation", file=sys.stdout, leave=False, dynamic_ncols=True)
         with torch.no_grad():
@@ -139,18 +137,15 @@ class Finetuner:
 
                 with autocast(enabled=self.scaler.is_enabled()):
                     if self.tta_enabled_val:
-                        # TTA: hflip, vflip (simple example, can be extended)
                         outputs_original = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
                         if isinstance(outputs_original, tuple): outputs_original = outputs_original[0]
 
                         outputs_hflip = self.model(rgb_img=T_v2.functional.horizontal_flip(rgb_images), spectral_img=None, mode='classify')
                         if isinstance(outputs_hflip, tuple): outputs_hflip = outputs_hflip[0]
                         
-                        # For vflip, ensure model is robust or use it cautiously
                         outputs_vflip = self.model(rgb_img=T_v2.functional.vertical_flip(rgb_images), spectral_img=None, mode='classify')
                         if isinstance(outputs_vflip, tuple): outputs_vflip = outputs_vflip[0]
 
-                        # Average logits (or probabilities after softmax, logits usually preferred)
                         final_outputs = (outputs_original + outputs_hflip + outputs_vflip) / 3.0
                     else:
                         final_outputs = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
@@ -164,14 +159,14 @@ class Finetuner:
                      continue
 
                 total_val_loss += loss.item()
-                all_final_outputs_list.append(final_outputs.cpu()) # Store logits
+                all_final_outputs_list.append(final_outputs.cpu()) 
                 all_labels_list.append(labels.cpu())
 
         avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
         metrics: Dict[str, float] = {"val_loss": avg_val_loss}
 
         if not all_final_outputs_list:
-             logger.warning("Validation yielded no outputs (all batches may have had issues). Returning zero metrics beyond val_loss.")
+             logger.warning("Validation yielded no outputs. Returning zero metrics beyond val_loss.")
              metrics.update({"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0, "precision_macro":0.0, "recall_macro":0.0})
         else:
             all_logits_stacked = torch.cat(all_final_outputs_list)

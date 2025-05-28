@@ -61,8 +61,6 @@ def load_config_from_yaml_or_default(yaml_config_path: Optional[str] = None) -> 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Fine-tuning script for HVT models.")
     parser.add_argument("--config", type=str, default=None, help="Path to YAML config file.")
-    # Add --resume later if needed for two-phase training
-    # parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from.")
     return parser.parse_args()
 
 def set_global_seed(seed_value: int):
@@ -205,9 +203,9 @@ def main_execution_logic():
         "root_dir": cfg["data_root"], 
         "img_size": tuple(cfg["img_size"]), 
         "train_split_ratio": cfg["train_split_ratio"], 
-        "normalize_for_model": cfg["normalize_data"], 
+        "normalize_for_model": cfg["normalize_data"], # Controlled by new config
         "original_dataset_name": cfg["original_dataset_name"], 
-        "augmented_dataset_name": cfg.get("augmented_dataset_name", None), # Uses updated config
+        "augmented_dataset_name": cfg.get("augmented_dataset_name", None),
         "random_seed": cfg["seed"]
     }
     train_dataset = SARCLD2024Dataset(**dataset_args, split="train"); val_dataset = SARCLD2024Dataset(**dataset_args, split="val")
@@ -219,40 +217,38 @@ def main_execution_logic():
             logger.warning("WeightedRandomSampler requested, but train_dataset has no current_split_labels or it's empty.")
         else:
             train_labels_np = train_dataset.current_split_labels
-            class_counts = PyCounter(train_labels_np)
+            class_counts_counter = PyCounter(train_labels_np) # Renamed to avoid conflict
             
-            num_classes = cfg.get("num_classes", train_dataset.num_classes) # Ensure num_classes is available
-            
-            # Calculate weights based on specified mode
-            sampler_mode = cfg.get("weighted_sampler_mode", "inv_freq") # Default to inv_freq if not specified
+            num_classes = cfg.get("num_classes", train_dataset.num_classes)
+            sampler_mode = cfg.get("weighted_sampler_mode", "inv_freq")
+            per_class_weight = torch.ones(num_classes, dtype=torch.float) # Default
             
             if sampler_mode == "sqrt_inv_count":
-                # New formula: 1.0 / sqrt(class_count)
-                per_class_weight = torch.zeros(num_classes, dtype=torch.float)
                 for i in range(num_classes):
-                    count = class_counts.get(i, 0)
-                    if count > 0:
-                        per_class_weight[i] = 1.0 / math.sqrt(count)
-                    else: # Should not happen if classes are present in dataset, but handle
-                        per_class_weight[i] = 1.0 # Assign default weight if class is missing in split
+                    count = class_counts_counter.get(i, 0)
+                    if count > 0: per_class_weight[i] = 1.0 / math.sqrt(count)
                 logger.info(f"Using WeightedRandomSampler with 'sqrt_inv_count' mode. Per-class weights: {per_class_weight.numpy().round(3)}")
             
-            elif sampler_mode == "inv_freq": # Existing logic from dataset.get_class_weights()
-                # Using dataset's internal method which calculates: len(dataset) / (num_classes * count_c)
-                per_class_weight = train_dataset.get_class_weights() 
-                if per_class_weight is None: # Should not happen if labels exist
-                    logger.error("Failed to get class weights for sampler (inv_freq mode). Sampler disabled.")
-                    per_class_weight = torch.ones(num_classes, dtype=torch.float) # Fallback
-                else:
+            elif sampler_mode == "inv_freq":
+                # Use dataset's method, ensure it doesn't return None for valid cases
+                retrieved_weights = train_dataset.get_class_weights() 
+                if retrieved_weights is not None and len(retrieved_weights) == num_classes:
+                    per_class_weight = retrieved_weights
                     logger.info(f"Using WeightedRandomSampler with 'inv_freq' mode. Per-class weights from dataset: {per_class_weight.numpy().round(3)}")
+                else:
+                    logger.error(f"Failed to get valid class weights for sampler (inv_freq mode, num_classes={num_classes}, retrieved: {retrieved_weights}). Sampler may not work as intended.")
             else:
                 logger.warning(f"Unknown weighted_sampler_mode: {sampler_mode}. Defaulting to inv_freq.")
-                per_class_weight = train_dataset.get_class_weights()
-                if per_class_weight is None: per_class_weight = torch.ones(num_classes, dtype=torch.float)
+                retrieved_weights = train_dataset.get_class_weights()
+                if retrieved_weights is not None and len(retrieved_weights) == num_classes: per_class_weight = retrieved_weights
 
             sample_weights = torch.zeros(len(train_labels_np), dtype=torch.float)
             for i, label_idx in enumerate(train_labels_np):
-                sample_weights[i] = per_class_weight[label_idx]
+                if 0 <= label_idx < len(per_class_weight):
+                    sample_weights[i] = per_class_weight[label_idx]
+                else:
+                    logger.warning(f"Label index {label_idx} out of bounds for per_class_weight (len {len(per_class_weight)}). Using default weight 1.0 for this sample.")
+                    sample_weights[i] = 1.0
             
             sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
             logger.info(f"WeightedRandomSampler enabled (mode: {sampler_mode}).")
@@ -276,27 +272,23 @@ def main_execution_logic():
         
     augmentations_pipeline = FinetuneAugmentation(tuple(cfg["img_size"])) if cfg.get("augmentations_enabled", True) else None
     
-    # Loss weights for criterion
     loss_fn_weights = None
     if cfg.get("use_weighted_loss", False):
-        # Typically, for loss function, inverse frequency is used.
-        loss_fn_weights = train_dataset.get_class_weights() # This uses inv_freq calculation
-        if loss_fn_weights is not None:
-            loss_fn_weights = loss_fn_weights.to(device)
+        retrieved_loss_weights = train_dataset.get_class_weights() 
+        if retrieved_loss_weights is not None:
+            loss_fn_weights = retrieved_loss_weights.to(device)
             logger.info(f"Using weighted CrossEntropyLoss. Weights: {loss_fn_weights.cpu().numpy().round(3)}")
         else:
-            logger.warning("use_weighted_loss is True, but could not get class weights from dataset. Using unweighted loss.")
+            logger.warning("use_weighted_loss is True, but could not get class weights. Using unweighted loss.")
 
     criterion = nn.CrossEntropyLoss(
         weight=loss_fn_weights, 
-        label_smoothing=cfg.get("loss_label_smoothing", 0.05) # Updated label smoothing
+        label_smoothing=cfg.get("loss_label_smoothing", 0.1) 
     )
 
-    # --- Optimizer Setup ---
     head_module_name = "classifier_head"
     all_head_params = [p for n, p in model.named_parameters() if n.startswith(head_module_name + ".")]
     all_backbone_params = [p for n, p in model.named_parameters() if not n.startswith(head_module_name + ".")]
-
     freeze_backbone_until_epoch_cfg = cfg.get("freeze_backbone_epochs", 0)
     
     if freeze_backbone_until_epoch_cfg > 0: 
@@ -309,37 +301,31 @@ def main_execution_logic():
         logger.info(f"Optimizer initial setup: Training full model. Head LR: {initial_lr_head:.2e}, Backbone LR: {initial_lr_backbone:.2e}")
 
     param_groups = []
-    if all_head_params:
-        param_groups.append({'params': all_head_params, 'name': 'head', 'lr': initial_lr_head})
-    if all_backbone_params:
-        param_groups.append({'params': all_backbone_params, 'name': 'backbone', 'lr': initial_lr_backbone})
+    if all_head_params: param_groups.append({'params': all_head_params, 'name': 'head', 'lr': initial_lr_head})
+    if all_backbone_params: param_groups.append({'params': all_backbone_params, 'name': 'backbone', 'lr': initial_lr_backbone})
     
     optim_name = cfg.get("optimizer", "AdamW").lower()
-    # Default LR for optimizer constructor is overridden by group LRs.
     default_opt_constructor_lr = cfg.get('lr_head_unfrozen_phase', 1e-4) 
-    # Get optimizer specific params from config, add weight_decay, then eps
-    opt_kwargs = cfg.get("optimizer_params", {}).copy() # e.g., betas
-    opt_kwargs['weight_decay'] = cfg.get("weight_decay", 0.01)
-    opt_kwargs['lr'] = default_opt_constructor_lr # Base LR for optimizer constructor
+    opt_kwargs = cfg.get("optimizer_params", {}).copy() 
+    opt_kwargs['weight_decay'] = cfg.get("weight_decay", 0.05)
+    opt_kwargs['lr'] = default_opt_constructor_lr 
 
     if optim_name == "adamw":
-        opt_kwargs['eps'] = cfg.get("optimizer_params", {}).get("eps", 1e-8) # Ensure eps is specifically for AdamW
+        opt_kwargs.setdefault("eps", 1e-8) # Ensure eps is present for AdamW, use config or default
         optimizer = torch.optim.AdamW(param_groups, **opt_kwargs)
     elif optim_name == "sgd":
         opt_kwargs.setdefault('momentum', 0.9)
-        # remove eps if it was in optimizer_params and not applicable to SGD
         opt_kwargs.pop('eps', None) 
         optimizer = torch.optim.SGD(param_groups, **opt_kwargs)
     else:
-        logger.warning(f"Optimizer '{optim_name}' not explicitly handled. Defaulting to AdamW with its specific params.")
-        opt_kwargs['eps'] = cfg.get("optimizer_params", {}).get("eps", 1e-8)
+        logger.warning(f"Optimizer '{optim_name}' not explicitly handled. Defaulting to AdamW.")
+        opt_kwargs.setdefault("eps", 1e-8)
         optimizer = torch.optim.AdamW(param_groups, **opt_kwargs)
     
-    logger.info(f"Optimizer: {optimizer.__class__.__name__} created with parameters: {optimizer.defaults}")
+    logger.info(f"Optimizer: {optimizer.__class__.__name__} created with effective defaults: {optimizer.defaults}")
     for pg_idx, pg in enumerate(optimizer.param_groups):
         pg_name = pg.get('name', f'UnnamedGroup{pg_idx}')
         logger.info(f"  Group '{pg_name}': Initial LR {pg.get('lr'):.2e}, Weight Decay {pg.get('weight_decay'):.2e}")
-
 
     scheduler, lr_scheduler_on_batch_flag = None, False
     sched_cfg_name = cfg.get("scheduler", "None").lower(); warmup_epochs_cfg = cfg.get("warmup_epochs", 0)
@@ -349,31 +335,35 @@ def main_execution_logic():
     
     if sched_cfg_name != "none" and steps_per_epoch_for_sched > 0 :
         if sched_cfg_name == "warmupcosine":
-            # Warmup epochs should be relative to the current phase of training,
-            # or apply to the total training duration if not doing multi-stage LR explicitly in scheduler.
-            # Current LambdaLR applies to total steps.
             total_sched_steps = total_epochs_for_sched * steps_per_epoch_for_sched
-            warmup_sched_steps = warmup_epochs_cfg * steps_per_epoch_for_sched # Longer warmup from config
-            
+            warmup_sched_steps = warmup_epochs_cfg * steps_per_epoch_for_sched
             if warmup_sched_steps >= total_sched_steps and total_sched_steps > 0:
-                warmup_sched_steps = max(0, int(0.1 * total_sched_steps)) # Fallback if bad config
+                warmup_sched_steps = max(0, int(0.1 * total_sched_steps))
                 logger.warning(f"Warmup steps ({warmup_epochs_cfg * steps_per_epoch_for_sched}) >= total steps ({total_sched_steps}). Adjusted to {warmup_sched_steps}.")
-            
             if total_sched_steps > 0 : 
                 scheduler = get_cosine_schedule_with_warmup_step(optimizer, warmup_sched_steps, total_sched_steps, num_cycles=0.5, last_epoch=-1)
                 lr_scheduler_on_batch_flag = True
-            if scheduler: logger.info(f"Scheduler: WarmupCosine (per-step). WU Steps: {warmup_sched_steps}, Total Steps: {total_sched_steps}, Eta Min: {cfg.get('eta_min_lr')}")
-        # Add other schedulers if needed
-            
+            if scheduler: logger.info(f"Scheduler: WarmupCosine (per-step). WU Steps: {warmup_sched_steps}, Total Steps: {total_sched_steps}, Eta Min used by lambda: {cfg.get('eta_min_lr')}")
+        elif sched_cfg_name == "cosineannealinglr": # Epoch-based
+            cosine_t_max = total_epochs_for_sched - warmup_epochs_cfg if warmup_epochs_cfg > 0 else total_epochs_for_sched
+            if cosine_t_max <=0: cosine_t_max = 1 
+            main_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_t_max, eta_min=cfg.get("eta_min_lr", 0))
+            if warmup_epochs_cfg > 0:
+                warmup_scheduler = LinearLR(optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_epochs_cfg)
+                scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_epochs_cfg])
+                logger.info(f"Scheduler: SequentialLR(Warmup({warmup_epochs_cfg}eps) -> CosineAnnealingLR(T_max={cosine_t_max}, eta_min={cfg.get('eta_min_lr', 0)})).")
+            else: scheduler = main_scheduler; logger.info(f"Scheduler: CosineAnnealingLR (per-epoch). T_max={cosine_t_max}, eta_min={cfg.get('eta_min_lr', 0)}")
+            lr_scheduler_on_batch_flag = False 
+    
     scaler_obj = GradScaler(enabled=(cfg.get("amp_enabled", True) and device == 'cuda'))
     finetuner_obj = Finetuner(
         model=model, optimizer=optimizer, criterion=criterion, device=device,
         scaler=scaler_obj, scheduler=scheduler, lr_scheduler_on_batch=lr_scheduler_on_batch_flag,
         accumulation_steps=eff_accum_steps_sched, 
-        clip_grad_norm=cfg.get("clip_grad_norm"), # Updated clip_grad_norm from config
+        clip_grad_norm=cfg.get("clip_grad_norm"),
         augmentations=augmentations_pipeline, 
         num_classes=cfg["num_classes"],
-        tta_enabled_val=cfg.get("tta_enabled_val", False) # Pass TTA flag
+        tta_enabled_val=cfg.get("tta_enabled_val", False)
     )
 
     best_val_metric_val = 0.0 if cfg.get("metric_to_monitor_early_stopping", "f1_macro") != "val_loss" else float('inf')
@@ -385,13 +375,9 @@ def main_execution_logic():
     os.makedirs(abs_ckpt_save_dir, exist_ok=True)
     logger.info(f"Checkpoints will be saved in: {abs_ckpt_save_dir}")
     
-    # Debug log for initial LRs from optimizer groups vs scheduler base LRs
     if scheduler and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs:
         for i, (opt_g, sched_base_lr) in enumerate(zip(optimizer.param_groups, scheduler.base_lrs)):
             logger.debug(f"DEBUG INIT: Opt Group {i} ('{opt_g.get('name')}'): Current LR {opt_g['lr']:.2e}, Scheduler Base LR {sched_base_lr:.2e}")
-    else:
-        logger.debug("DEBUG INIT: Scheduler not present or has no base_lrs attribute / base_lrs empty.")
-
 
     freeze_backbone_until_epoch_from_cfg = cfg.get("freeze_backbone_epochs", 0)
     logger.info(f"Starting fine-tuning for {cfg['epochs']} epochs. Monitor: '{metric_to_watch}'. Backbone frozen for initial {freeze_backbone_until_epoch_from_cfg} epochs.")
@@ -422,7 +408,7 @@ def main_execution_logic():
                     pg_lr_val = pg.get('lr')
                     lr_str = f"{pg_lr_val:.2e}" if isinstance(pg_lr_val, float) else str(pg_lr_val)
                     logger.info(f"  Param group '{group_name}': Current optimizer LR at epoch start: {lr_str}")
-                    if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and pg_idx < len(scheduler.base_lrs):
+                    if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and pg_idx < len(scheduler.base_lrs):
                         logger.info(f"    LambdaLR base_lr for this group: {scheduler.base_lrs[pg_idx]:.2e}")
             
             elif newly_unfrozen_this_epoch_flag and (epoch_1_based == freeze_backbone_until_epoch_from_cfg + 1):
@@ -430,20 +416,18 @@ def main_execution_logic():
                 lr_head_target_unfrozen = cfg['lr_head_unfrozen_phase']
                 lr_backbone_target_unfrozen = cfg['lr_backbone_unfrozen_phase']
                 
-                for p_group_idx, p_group in enumerate(optimizer.param_groups): # Use enumerate for index
+                for p_group_idx, p_group in enumerate(optimizer.param_groups):
                     group_name = p_group.get('name')
                     target_lr_for_group = None
-                    if group_name == 'head': 
-                        target_lr_for_group = lr_head_target_unfrozen
-                    elif group_name == 'backbone': 
-                        target_lr_for_group = lr_backbone_target_unfrozen
+                    if group_name == 'head': target_lr_for_group = lr_head_target_unfrozen
+                    elif group_name == 'backbone': target_lr_for_group = lr_backbone_target_unfrozen
                     
                     if target_lr_for_group is not None:
                         if p_group['lr'] != target_lr_for_group:
                             logger.info(f"  Updating {group_name} group optimizer LR from {p_group['lr']:.2e} to {target_lr_for_group:.2e}")
                             p_group['lr'] = target_lr_for_group
                         
-                        if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and p_group_idx < len(scheduler.base_lrs):
+                        if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and p_group_idx < len(scheduler.base_lrs):
                             if scheduler.base_lrs[p_group_idx] != target_lr_for_group:
                                 logger.info(f"    Updating LambdaLR's base_lr for group '{group_name}' (idx {p_group_idx}) from {scheduler.base_lrs[p_group_idx]:.2e} to {target_lr_for_group:.2e}")
                                 scheduler.base_lrs[p_group_idx] = target_lr_for_group
@@ -454,10 +438,9 @@ def main_execution_logic():
                          pg_lr_val = param_group.get('lr')
                          lr_str = f"{pg_lr_val:.3e}" if isinstance(pg_lr_val, float) else str(pg_lr_val)
                          base_lr_sched_str = ""
-                         if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and i < len(scheduler.base_lrs):
+                         if isinstance(scheduler, LambdaLR) and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and i < len(scheduler.base_lrs):
                              base_lr_sched_str = f"(Scheduler base: {scheduler.base_lrs[i]:.3e})"
                          logger.info(f"    Opt Group {i} ('{param_group.get('name', 'N/A')}'): Current LR {lr_str} {base_lr_sched_str}")
-
 
             avg_train_loss = finetuner_obj.train_one_epoch(train_loader, epoch_1_based, cfg["epochs"])
             

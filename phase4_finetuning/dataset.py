@@ -25,40 +25,47 @@ logger = logging.getLogger(__name__)
 class SARCLD2024Dataset(Dataset):
     def __init__(self,
                  root_dir: str,
-                 img_size: tuple, # e.g., (448, 448)
-                 split: str = "train", # "train", "val", or "test"
+                 img_size: tuple, 
+                 split: str = "train", 
                  train_split_ratio: float = 0.8,
-                 normalize_for_model: bool = True, # Usually True for fine-tuning
+                 normalize_for_model: bool = True, # Will be set by config['normalize_data']
                  original_dataset_name: Optional[str] = None,
                  augmented_dataset_name: Optional[str] = None,
                  random_seed: Optional[int] = None):
 
         self.root_dir = Path(root_dir)
-        self.img_size = tuple(img_size) # Ensure it's a tuple
+        self.img_size = tuple(img_size)
         self.split = split.lower()
         self.train_split_ratio = train_split_ratio
-        self.normalize = normalize_for_model
+        self.normalize = normalize_for_model # Controlled by config['normalize_data']
 
-        # Use passed args or fall back to global defaults from imported config
         self.original_dataset_name = original_dataset_name if original_dataset_name is not None else global_finetune_config_defaults.get('original_dataset_name')
         self.augmented_dataset_name = augmented_dataset_name if augmented_dataset_name is not None else global_finetune_config_defaults.get('augmented_dataset_name')
         self.random_seed = random_seed if random_seed is not None else global_finetune_config_defaults.get('seed')
 
         self.classes = ["Bacterial Blight", "Curl Virus", "Healthy Leaf", "Herbicide Growth Damage", "Leaf Hopper Jassids", "Leaf Redding", "Leaf Variegation"]
-        self.num_classes = len(self.classes) # Or get from config: global_finetune_config_defaults.get('num_classes')
+        self.num_classes = len(self.classes) 
         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
 
         self.image_paths: List[str] = []
         self.labels: List[int] = []
 
-        logger.info(f"[DATASET INIT - {self.split}] Root: {self.root_dir}, ImgSize: {self.img_size}")
+        logger.info(f"[DATASET INIT - {self.split}] Root: {self.root_dir}, ImgSize: {self.img_size}, Normalize: {self.normalize}")
         if not self.root_dir.exists():
             logger.error(f"FATAL [DATASET INIT - {self.split}] Dataset root missing: {self.root_dir}")
             raise FileNotFoundError(f"Dataset root missing: {self.root_dir}")
 
         items_scanned_count = 0
-        for dataset_type_name in [self.original_dataset_name, self.augmented_dataset_name]:
-            if not dataset_type_name: continue # Skip if name is None or empty
+        # Use provided names or default from global config if None
+        dataset_names_to_scan = [
+            self.original_dataset_name, 
+            self.augmented_dataset_name
+        ]
+
+        for dataset_type_name in dataset_names_to_scan:
+            if not dataset_type_name: 
+                logger.debug(f"[DATASET INIT - {self.split}] Dataset name '{dataset_type_name}' is None/empty, skipping.")
+                continue
             dataset_path = self.root_dir / dataset_type_name
             if not dataset_path.is_dir():
                 logger.debug(f"[DATASET INIT - {self.split}] Path not found or not a dir, skipping: {dataset_path}")
@@ -75,7 +82,7 @@ class SARCLD2024Dataset(Dataset):
                         items_scanned_count += 1
                         if item.is_file() and item.suffix.lower() in valid_extensions:
                             try:
-                                if os.path.getsize(item) > 0: # Basic check for non-empty file
+                                if os.path.getsize(item) > 0: 
                                     self.image_paths.append(str(item))
                                     self.labels.append(self.class_to_idx[class_name])
                                 else:
@@ -93,11 +100,10 @@ class SARCLD2024Dataset(Dataset):
             logger.error(f"FATAL [DATASET INIT - {self.split}] No valid image paths found in {self.root_dir} using specified dataset names.")
             raise ValueError(f"No valid images found. Please check dataset structure and names in {self.root_dir}.")
 
-        self.image_paths_np = np.array(self.image_paths) # Use new name to avoid conflict
+        self.image_paths_np = np.array(self.image_paths)
         self.labels_np = np.array(self.labels)
         logger.info(f"[DATASET INIT - {self.split}] Total valid image paths collected: {len(self.image_paths_np)} from ~{items_scanned_count} items considered.")
 
-        # Splitting logic
         indices = np.arange(len(self.image_paths_np))
         if self.random_seed is not None: np.random.seed(self.random_seed)
         np.random.shuffle(indices)
@@ -111,13 +117,12 @@ class SARCLD2024Dataset(Dataset):
         logger.info(f"[DATASET INIT - {self.split}] Dataset split size: {len(self.current_indices)} samples.")
         self.class_weights_computed = None
 
-        # Base transforms (applied in __getitem__)
         transforms_list = [
             T_v2.ToImage(),
-            T_v2.ToDtype(torch.float32, scale=False), # scale=False as ToImage already handles it
+            T_v2.ToDtype(torch.float32, scale=True), # scale=True ensures [0,1] range from uint8 PIL
             T_v2.Resize(self.img_size, interpolation=T_v2.InterpolationMode.BICUBIC, antialias=True),
         ]
-        if self.normalize:
+        if self.normalize: # This will be False based on the new config, so Normalize won't be added
              transforms_list.append(T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]))
         self.base_transform = T_v2.Compose(transforms_list)
         logger.info(f"[DATASET INIT - {self.split}] Base RGB Transforms: {self.base_transform}")
@@ -139,7 +144,7 @@ class SARCLD2024Dataset(Dataset):
         except Exception as e:
             logger.error(f"Error loading image {img_path} (idx {idx}, actual_idx {actual_idx_in_full_list}): {e}. Returning dummy.")
             dummy_tensor = torch.zeros((3, self.img_size[0], self.img_size[1]), dtype=torch.float32)
-            if self.normalize:
+            if self.normalize: # Apply normalization to dummy if it would have been applied
                 normalizer = T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 dummy_tensor = normalizer(dummy_tensor)
             return dummy_tensor, torch.tensor(-1, dtype=torch.long)
@@ -149,7 +154,7 @@ class SARCLD2024Dataset(Dataset):
         except Exception as e_transform:
             logger.error(f"Error transforming image {img_path}: {e_transform}. Returning dummy.", exc_info=True)
             dummy_tensor = torch.zeros((3, self.img_size[0], self.img_size[1]), dtype=torch.float32)
-            if self.normalize:
+            if self.normalize: # Apply normalization to dummy
                 normalizer = T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 dummy_tensor = normalizer(dummy_tensor)
             return dummy_tensor, torch.tensor(-1, dtype=torch.long)
@@ -160,22 +165,22 @@ class SARCLD2024Dataset(Dataset):
         return self.classes
 
     def get_class_weights(self) -> Optional[torch.Tensor]:
+        # This computes inverse frequency weights, suitable for CrossEntropyLoss `weight`
         if self.class_weights_computed is None:
             if len(self.current_split_labels) == 0:
                 logger.warning(f"Cannot compute class weights: split '{self.split}' has no labels.")
                 return None
             class_counts = Counter(self.current_split_labels)
             
-            weights = torch.ones(self.num_classes, dtype=torch.float) # Default to 1.0
+            weights = torch.ones(self.num_classes, dtype=torch.float) 
             for i in range(self.num_classes):
                 count = class_counts.get(i, 0)
                 if count > 0:
+                    # Standard inverse frequency weighting
                     weights[i] = len(self.current_split_labels) / (self.num_classes * count)
-                else:
-                    logger.debug(f"Class '{self.classes[i]}' (idx {i}) not found in split '{self.split}'. Weight remains 1.0.")
-            # Normalize weights to sum to 1 or simply return raw inverse frequencies
-            # Normalizing can prevent very large weight values if a class is extremely rare.
-            # self.class_weights_computed = weights / weights.sum() # Normalize
-            self.class_weights_computed = weights # Raw inverse frequency, often used directly
-            logger.info(f"Computed class weights for split '{self.split}': {self.class_weights_computed.numpy().round(3)}")
+                else: # If a class is not in the current split (can happen with small val sets)
+                    weights[i] = 1.0 # Assign a default weight, or handle as error/warning
+                    logger.debug(f"Class '{self.classes[i]}' (idx {i}) not found in split '{self.split}' for weight calculation. Weight set to 1.0.")
+            self.class_weights_computed = weights
+            logger.info(f"Computed class weights (inv_freq for loss) for split '{self.split}': {self.class_weights_computed.numpy().round(3)}")
         return self.class_weights_computed
