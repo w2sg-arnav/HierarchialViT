@@ -3,159 +3,143 @@ import os
 import torch
 import logging
 
-# --- Define PROJECT_ROOT_PATH correctly at the top ---
-# This assumes config.py is in phase4_finetuning, and phase4_finetuning is in cvpr25
+# --- Logger for this config file ---
+_config_module_logger = logging.getLogger(__name__)
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+
+# --- Project Path Configuration ---
 try:
-    CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__)) # .../phase4_finetuning
-    PACKAGE_ROOT = CURRENT_FILE_DIR
-    PROJECT_ROOT_PATH = os.path.dirname(PACKAGE_ROOT) # .../cvpr25
-except NameError: # Fallback if __file__ is not defined (e.g. interactive session)
-    PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25" # MUST BE CORRECT FOR YOUR ENV
-    print(f"Warning (phase4_config): Guessed PROJECT_ROOT_PATH: {PROJECT_ROOT_PATH}")
+    PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+    PROJECT_ROOT_PATH = os.path.dirname(PACKAGE_ROOT)
+except NameError:
+    PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25"
+    PACKAGE_ROOT = os.path.join(PROJECT_ROOT_PATH, "phase4_finetuning")
+    _config_module_logger.warning(f"Guessed PROJECT_ROOT_PATH: {PROJECT_ROOT_PATH} and PACKAGE_ROOT: {PACKAGE_ROOT}")
 
+# --- Default Values ---
+DEFAULT_RANDOM_SEED = 42
+DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEFAULT_DATASET_BASE_PATH = os.path.join(PROJECT_ROOT_PATH, "SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection")
+DEFAULT_NUM_CLASSES = 7
+DEFAULT_ORIGINAL_DATASET_NAME = "Original Dataset"
+DEFAULT_AUGMENTED_DATASET_NAME = "Augmented Dataset"
+DEFAULT_TRAIN_SPLIT_RATIO_FINETUNE = 0.8
 
-# --- Base values (some might be overridden by phase3_base_config_dict) ---
-RANDOM_SEED_default = 42
-DEVICE_default = "cuda" if torch.cuda.is_available() else "cpu"
-DATASET_BASE_PATH_default = os.path.join(PROJECT_ROOT_PATH, "SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection")
-NUM_CLASSES_default = 7
-ORIGINAL_DATASET_NAME_default = "Original Dataset"
-AUGMENTED_DATASET_NAME_default = "Augmented Dataset"
-TRAIN_SPLIT_RATIO_default = 0.8
-
-# --- Attempt to Import and Use base configurations from Phase 3 ---
-phase3_imported_successfully = False
+# --- Attempt to Import and Use Base Configurations from Phase 3 ---
+phase3_config_imported = False
+phase3_cfg = {}
 try:
-    from phase3_pretraining.config import config as phase3_base_config_dict
-    print("INFO (phase4_config): Successfully imported base config dict from phase3_pretraining.config")
-    phase3_imported_successfully = True
-
-    RANDOM_SEED_base = phase3_base_config_dict.get('seed', RANDOM_SEED_default)
-    DEVICE_base = phase3_base_config_dict.get('device', DEVICE_default)
-    DATASET_BASE_PATH_base = phase3_base_config_dict.get('data_root', DATASET_BASE_PATH_default)
-    NUM_CLASSES_base = phase3_base_config_dict.get('num_classes', NUM_CLASSES_default)
-    ORIGINAL_DATASET_NAME_base = phase3_base_config_dict.get('original_dataset_name', ORIGINAL_DATASET_NAME_default)
-    AUGMENTED_DATASET_NAME_base = phase3_base_config_dict.get('augmented_dataset_name', AUGMENTED_DATASET_NAME_default)
-
-    # Construct the path to the Phase 3 HVT-XL pre-trained checkpoint
-    phase3_ckpt_dir_rel_to_proj = phase3_base_config_dict.get('checkpoint_dir', "pretrain_checkpoints_h100_xl") # Relative path from project root
-    # Ensure it's an absolute path starting from PROJECT_ROOT_PATH
-    phase3_ckpt_dir_abs = os.path.join(PROJECT_ROOT_PATH, os.path.basename(phase3_ckpt_dir_rel_to_proj.strip('/\\'))) # Use basename to avoid double project_root
-
-    phase3_ckpt_filename = "diseaseawarehvt_xl_h100_prod_pretrain_best_probe.pth" # Your confirmed filename
-    PRETRAINED_HVT_XL_CHECKPOINT_DEFAULT = os.path.join(phase3_ckpt_dir_abs, phase3_ckpt_filename)
-    print(f"INFO (phase4_config): Defaulting pretrained_checkpoint_path (absolute) to: {PRETRAINED_HVT_XL_CHECKPOINT_DEFAULT}")
-
-    HVT_XL_PATCH_SIZE = phase3_base_config_dict.get('hvt_patch_size', 14)
-    HVT_XL_EMBED_DIM_RGB = phase3_base_config_dict.get('hvt_embed_dim_rgb', 192)
-    HVT_XL_EMBED_DIM_SPECTRAL = phase3_base_config_dict.get('hvt_embed_dim_spectral', 192)
-    HVT_XL_SPECTRAL_CHANNELS = phase3_base_config_dict.get('hvt_spectral_channels', 3)
-    HVT_XL_DEPTHS = phase3_base_config_dict.get('hvt_depths', [3, 6, 24, 3])
-    HVT_XL_NUM_HEADS = phase3_base_config_dict.get('hvt_num_heads', [6, 12, 24, 48])
-    HVT_XL_MLP_RATIO = phase3_base_config_dict.get('hvt_mlp_ratio', 4.0)
-    HVT_XL_QKV_BIAS = phase3_base_config_dict.get('hvt_qkv_bias', True)
-    HVT_XL_PRETRAIN_DROP_PATH_RATE = phase3_base_config_dict.get('hvt_drop_path_rate', 0.2)
-    HVT_XL_USE_DFCA = phase3_base_config_dict.get('hvt_use_dfca', True)
-    HVT_XL_DFCA_HEADS = phase3_base_config_dict.get('hvt_dfca_heads', 32)
-    HVT_XL_DFCA_DROP_RATE = phase3_base_config_dict.get('dfca_drop_rate', 0.1)
-    HVT_XL_DFCA_USE_DISEASE_MASK = phase3_base_config_dict.get('dfca_use_disease_mask', True)
-    HVT_XL_GRAD_CKPT_PRETRAIN = phase3_base_config_dict.get('use_gradient_checkpointing', True)
-
-    ENABLE_TORCH_COMPILE_base = phase3_base_config_dict.get('enable_torch_compile', True)
-    TORCH_COMPILE_MODE_base = phase3_base_config_dict.get('torch_compile_mode', "reduce-overhead")
-    MATMUL_PRECISION_base = phase3_base_config_dict.get('matmul_precision', 'high')
-    CUDNN_BENCHMARK_base = phase3_base_config_dict.get('cudnn_benchmark', True)
-    NUM_WORKERS_base = phase3_base_config_dict.get('num_workers', 16)
-    PREFETCH_FACTOR_base = phase3_base_config_dict.get('prefetch_factor', 2) if NUM_WORKERS_base > 0 else None
-
+    from phase3_pretraining.config import config as phase3_base_config_dict_imported
+    phase3_cfg = phase3_base_config_dict_imported.copy()
+    phase3_config_imported = True
+    _config_module_logger.info("Successfully imported base config dict from phase3_pretraining.config")
 except ImportError as e:
-    print(f"Warning (phase4_config): Could not import config from phase3_pretraining: {e}. Using fallback defaults for Phase 4.")
-    RANDOM_SEED_base = RANDOM_SEED_default; DEVICE_base = DEVICE_default; DATASET_BASE_PATH_base = DATASET_BASE_PATH_default
-    NUM_CLASSES_base = NUM_CLASSES_default; ORIGINAL_DATASET_NAME_base = ORIGINAL_DATASET_NAME_default
-    AUGMENTED_DATASET_NAME_base = AUGMENTED_DATASET_NAME_default; TRAIN_SPLIT_RATIO_base = TRAIN_SPLIT_RATIO_default # Use fine-tune default split ratio
-    # IMPORTANT: User must verify this fallback path if Phase 3 import fails
-    PRETRAINED_HVT_XL_CHECKPOINT_DEFAULT = os.path.join(PROJECT_ROOT_PATH, "pretrain_checkpoints_h100_xl", "diseaseawarehvt_xl_h100_prod_pretrain_best_probe.pth")
-    print(f"Phase4 Config Fallback: Using hardcoded pretrained_checkpoint_path: {PRETRAINED_HVT_XL_CHECKPOINT_DEFAULT}")
-    HVT_XL_PATCH_SIZE = 14; HVT_XL_EMBED_DIM_RGB = 192; HVT_XL_EMBED_DIM_SPECTRAL = 192; HVT_XL_SPECTRAL_CHANNELS = 3
-    HVT_XL_DEPTHS = [3, 6, 24, 3]; HVT_XL_NUM_HEADS = [6, 12, 24, 48]; HVT_XL_MLP_RATIO = 4.0; HVT_XL_QKV_BIAS = True
-    HVT_XL_PRETRAIN_DROP_PATH_RATE = 0.2; HVT_XL_USE_DFCA = True; HVT_XL_DFCA_HEADS = 32; HVT_XL_DFCA_DROP_RATE = 0.1; HVT_XL_DFCA_USE_DISEASE_MASK = True
-    HVT_XL_GRAD_CKPT_PRETRAIN = True
-    ENABLE_TORCH_COMPILE_base = True; TORCH_COMPILE_MODE_base = "reduce-overhead"; MATMUL_PRECISION_base = 'high'; CUDNN_BENCHMARK_base = True
-    NUM_WORKERS_base = 4; PREFETCH_FACTOR_base = 2
+    _config_module_logger.warning(f"Could not import config from phase3_pretraining: {e}. Phase 4 will use its own defaults for HVT arch and checkpoint path.")
+except Exception as e_other:
+    _config_module_logger.error(f"Unexpected error importing Phase 3 config: {e_other}", exc_info=True)
 
+# --- Resolve Key Parameters ---
+SEED = phase3_cfg.get('seed', DEFAULT_RANDOM_SEED)
+DEVICE_RESOLVED = phase3_cfg.get('device', DEFAULT_DEVICE)
+DATA_ROOT_RESOLVED = phase3_cfg.get('data_root', DEFAULT_DATASET_BASE_PATH)
+NUM_CLASSES_RESOLVED = phase3_cfg.get('num_classes', DEFAULT_NUM_CLASSES)
+ORIGINAL_DATASET_NAME_RESOLVED = phase3_cfg.get('original_dataset_name', DEFAULT_ORIGINAL_DATASET_NAME)
+AUGMENTED_DATASET_NAME_RESOLVED = phase3_cfg.get('augmented_dataset_name', DEFAULT_AUGMENTED_DATASET_NAME)
+
+default_phase3_ckpt_filename = f"{phase3_cfg.get('model_arch_name_for_ckpt', 'hvt_xl_simclr')}_best_probe.pth"
+default_phase3_ckpt_path = None
+if phase3_config_imported:
+    phase3_pkg_root = phase3_cfg.get('PACKAGE_ROOT_PATH', os.path.join(PROJECT_ROOT_PATH, 'phase3_pretraining'))
+    phase3_ckpt_dir_name = phase3_cfg.get('checkpoint_dir_name', 'pretrain_checkpoints_hvt_xl') # Default from your prev config
+    default_phase3_ckpt_path = os.path.join(phase3_pkg_root, phase3_ckpt_dir_name, default_phase3_ckpt_filename)
+else:
+    # THIS PATH MUST BE SET MANUALLY IF PHASE 3 IMPORT FAILS
+    default_phase3_ckpt_path = "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth" # Manually set based on your info
+    _config_module_logger.warning(f"Phase 3 config import failed. PRETRAINED_HVT_CHECKPOINT_PATH set to: {default_phase3_ckpt_path}. VERIFY THIS PATH.")
+
+# HVT Architecture Parameters
+# Define the fallback dictionary separately
+_fallback_hvt_arch_params = {
+    "patch_size": 14, "embed_dim_rgb": 192, "embed_dim_spectral": 192, "spectral_channels": 0,
+    "depths": [3, 6, 24, 3], "num_heads": [6, 12, 24, 48], "mlp_ratio": 4.0, "qkv_bias": True,
+    "model_drop_rate": 0.0, "attn_drop_rate": 0.0, "drop_path_rate": 0.2, "norm_layer_name": "LayerNorm",
+    "use_dfca": False, "use_gradient_checkpointing": True,
+    "ssl_enable_mae": False, "ssl_enable_contrastive": False, "enable_consistency_loss_heads": False,
+}
+
+HVT_ARCH_PARAMS_FOR_FINETUNE = phase3_cfg.get('hvt_params_for_backbone', None)
+if HVT_ARCH_PARAMS_FOR_FINETUNE is None:
+    _config_module_logger.warning("Using FALLBACK HVT architecture parameters for fine-tuning because 'hvt_params_for_backbone' was not found in Phase 3 config. VERIFY THESE!")
+    HVT_ARCH_PARAMS_FOR_FINETUNE = _fallback_hvt_arch_params
+else:
+    _config_module_logger.info("Using HVT architecture parameters sourced from Phase 3 config for fine-tuning.")
+
+
+# For fine-tuning, some HVT params might change (e.g., drop_rate, grad_ckpt)
+HVT_ARCH_PARAMS_FOR_FINETUNE['model_drop_rate'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('model_drop_rate_finetune', 0.1) # Allow override or default
+HVT_ARCH_PARAMS_FOR_FINETUNE['drop_path_rate'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('drop_path_rate_finetune', 0.1)
+HVT_ARCH_PARAMS_FOR_FINETUNE['use_gradient_checkpointing'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('use_gradient_checkpointing_finetune', False) # Default to False for finetuning if enough VRAM
 
 # --- Fine-tuning Specific Configurations (this is the exported 'config' dict) ---
 config = {
     # General
-    "seed": RANDOM_SEED_base,
-    "device": DEVICE_base,
-    "log_dir": "logs_finetune_xl_prod", # Relative to phase4_finetuning directory
-    "log_file_finetune": "finetune_hvt_xl_prod.log",
-    "best_model_path": "best_finetuned_hvt_xl_prod.pth", # Relative to log_dir
-    "final_model_path": "final_finetuned_hvt_xl_prod.pth", # Relative to log_dir
+    "seed": SEED,
+    "device": DEVICE_RESOLVED,
+    "log_dir": "logs_finetune_phase4", # Relative to PACKAGE_ROOT (phase4_finetuning/)
+    "log_file_finetune": "finetune_hvt_xl.log",
+    "best_model_filename": "best_finetuned_hvt_xl.pth",
+    "final_model_filename": "final_finetuned_hvt_xl.pth",
+    "checkpoint_save_dir_name": "checkpoints",
 
     # Data
-    "data_root": DATASET_BASE_PATH_base,
-    "original_dataset_name": ORIGINAL_DATASET_NAME_base,
-    "augmented_dataset_name": AUGMENTED_DATASET_NAME_base,
+    "data_root": DATA_ROOT_RESOLVED,
+    "original_dataset_name": ORIGINAL_DATASET_NAME_RESOLVED,
+    "augmented_dataset_name": AUGMENTED_DATASET_NAME_RESOLVED,
     "img_size": (448, 448),
-    "num_classes": NUM_CLASSES_base,
-    "train_split_ratio": TRAIN_SPLIT_RATIO_default, # Fine-tuning specific split
+    "num_classes": NUM_CLASSES_RESOLVED,
+    "train_split_ratio": DEFAULT_TRAIN_SPLIT_RATIO_FINETUNE,
     "normalize_data": True,
     "use_weighted_sampler": True,
-    "num_workers": NUM_WORKERS_base,
-    "prefetch_factor": PREFETCH_FACTOR_base,
+    "num_workers": phase3_cfg.get('num_workers', 4), # Inherit from phase3 or use default
+    "prefetch_factor": (phase3_cfg.get('prefetch_factor', 2)
+                        if phase3_cfg.get('num_workers', 4) > 0 else None),
 
-    # Model - HVT-XL Specific
-    "model_architecture": "DiseaseAwareHVT_XL",
-    "pretrained_checkpoint_path": PRETRAINED_HVT_XL_CHECKPOINT_DEFAULT, # This should now be absolute
+    # Model - HVT-XL Fine-tuning
+    "model_architecture_name": "DiseaseAwareHVT_SSL_Finetuned",
+    "pretrained_checkpoint_path": default_phase3_ckpt_path, # This is now correctly an absolute path or a verified manual one
     "load_pretrained_backbone": True,
-    "freeze_backbone_epochs": 5,
+    "freeze_backbone_epochs": 0, # Example: Start with full model unfrozen
     "unfreeze_backbone_lr_factor": 0.1,
 
-    # HVT-XL Architecture (values sourced from Phase 3 or fallbacks)
-    "hvt_patch_size": HVT_XL_PATCH_SIZE,
-    "hvt_embed_dim_rgb": HVT_XL_EMBED_DIM_RGB,
-    "hvt_embed_dim_spectral": HVT_XL_EMBED_DIM_SPECTRAL,
-    "hvt_spectral_channels": HVT_XL_SPECTRAL_CHANNELS,
-    "hvt_depths": HVT_XL_DEPTHS,
-    "hvt_num_heads": HVT_XL_NUM_HEADS,
-    "hvt_mlp_ratio": HVT_XL_MLP_RATIO,
-    "hvt_qkv_bias": HVT_XL_QKV_BIAS,
-    "hvt_model_drop_rate": 0.1, # Fine-tuning specific dropout
-    "hvt_attn_drop_rate": 0.0,
-    "hvt_drop_path_rate": 0.1,  # Fine-tuning specific drop path (can be HVT_XL_PRETRAIN_DROP_PATH_RATE or different)
-    "hvt_use_dfca": HVT_XL_USE_DFCA,
-    "hvt_dfca_heads": HVT_XL_DFCA_HEADS,
-    "dfca_drop_rate": HVT_XL_DFCA_DROP_RATE,
-    "dfca_use_disease_mask": HVT_XL_DFCA_USE_DISEASE_MASK,
-    "use_gradient_checkpointing": False,
+    # HVT Architecture (already defined in HVT_ARCH_PARAMS_FOR_FINETUNE)
+    "hvt_params_for_model_init": HVT_ARCH_PARAMS_FOR_FINETUNE,
 
     # PyTorch Performance Settings
-    "enable_torch_compile": ENABLE_TORCH_COMPILE_base,
-    "torch_compile_mode": TORCH_COMPILE_MODE_base,
-    "matmul_precision": MATMUL_PRECISION_base,
-    "cudnn_benchmark": CUDNN_BENCHMARK_base,
+    "enable_torch_compile": phase3_cfg.get('enable_torch_compile', False),
+    "torch_compile_mode": phase3_cfg.get('torch_compile_mode', "reduce-overhead"),
+    "matmul_precision": phase3_cfg.get('matmul_precision', 'high'),
+    "cudnn_benchmark": phase3_cfg.get('cudnn_benchmark', True),
 
     # Training Loop
-    "epochs": 50,
-    "batch_size": 32,
-    "accumulation_steps": 1,
+    "epochs": 30,
+    "batch_size": 16, # For T4 with HVT-XL 448px
+    "accumulation_steps": 2, # Effective BS = 32
     "amp_enabled": True,
     "clip_grad_norm": 1.0,
-    "log_interval": 20,
+    "log_interval": 10, # Log more frequently for smaller batches
 
     # Optimizer
     "optimizer": "AdamW",
     "learning_rate": 3e-5,
-    "head_lr_multiplier": 1.0,
+    "head_lr_multiplier": 1.0, # Can set to >1 if only head is trained initially
     "weight_decay": 0.05,
     "optimizer_params": {"betas": (0.9, 0.999)},
 
     # Schedulers
     "scheduler": "WarmupCosine",
-    "warmup_epochs": 5,
-    "eta_min_lr": 1e-6,
+    "warmup_epochs": 3,
+    "eta_min_lr": 1e-7,
 
     # Loss Function
     "loss_label_smoothing": 0.1,
@@ -169,12 +153,12 @@ config = {
     "metric_to_monitor_early_stopping": "f1_macro",
 }
 
-# Export NUM_CLASSES for baseline models if they import directly from this config file
-NUM_CLASSES = config['num_classes'] # Make sure config dict has 'num_classes'
-# It does, as it's inherited from NUM_CLASSES_base or fallback
+NUM_CLASSES = config['num_classes']
 
-_config_module_logger = logging.getLogger(__name__)
-if not logging.getLogger().hasHandlers():
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
-_config_module_logger.info(f"Phase 4 Fine-tuning Configuration Defaults Loaded (config.py). Model arch: {config.get('model_architecture')}")
-_config_module_logger.info(f"Default pretrained checkpoint path set to: {config.get('pretrained_checkpoint_path')}")
+_config_module_logger.info(f"Phase 4 Fine-tuning Configuration Loaded. Model: {config.get('model_architecture_name')}")
+_config_module_logger.info(f"Pretrained Checkpoint to Load: {config.get('pretrained_checkpoint_path')}")
+_config_module_logger.info(f"Fine-tuning LR: {config['learning_rate']}, Epochs: {config['epochs']}, Eff. BS: {config['batch_size']*config['accumulation_steps']}")
+if config['hvt_params_for_model_init']['use_gradient_checkpointing']:
+    _config_module_logger.info("Gradient Checkpointing for HVT: ENABLED during fine-tuning.")
+else:
+    _config_module_logger.info("Gradient Checkpointing for HVT: DISABLED during fine-tuning.")

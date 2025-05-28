@@ -95,3 +95,179 @@
 2025-05-27 16:39:29 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 41 Training Summary: AvgLoss=1.5083, OptSteps=136, FinalLR=3.53e-04
 2025-05-27 16:39:29 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 41/80 | Duration: 438.10s | Eff. Samples/sec: 39.59 | Avg Loss: 1.5083 | LR: 3.53e-04
 2025-05-27 16:39:29 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E41 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 16:46:48 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E42: Applying leftover grads from accum (1 steps).
+2025-05-27 16:46:49 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 42 Training Summary: AvgLoss=1.4427, OptSteps=136, FinalLR=3.48e-04
+2025-05-27 16:46:49 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 42/80 | Duration: 439.78s | Eff. Samples/sec: 39.44 | Avg Loss: 1.4427 | LR: 3.48e-04
+2025-05-27 16:46:49 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E42 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 16:54:05 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E43: Applying leftover grads from accum (1 steps).
+2025-05-27 16:54:06 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 43 Training Summary: AvgLoss=1.3905, OptSteps=136, FinalLR=3.43e-04
+2025-05-27 16:54:06 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 43/80 | Duration: 436.85s | Eff. Samples/sec: 39.70 | Avg Loss: 1.3905 | LR: 3.43e-04
+2025-05-27 16:54:06 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E43 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:01:22 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E44: Applying leftover grads from accum (1 steps).
+2025-05-27 17:01:22 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 44 Training Summary: AvgLoss=1.4111, OptSteps=136, FinalLR=3.38e-04
+2025-05-27 17:01:22 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 44/80 | Duration: 436.31s | Eff. Samples/sec: 39.75 | Avg Loss: 1.4111 | LR: 3.38e-04
+2025-05-27 17:01:22 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E44 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:08:38 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E45: Applying leftover grads from accum (1 steps).
+2025-05-27 17:08:39 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 45 Training Summary: AvgLoss=1.3316, OptSteps=136, FinalLR=3.32e-04
+2025-05-27 17:08:39 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 45/80 | Duration: 436.86s | Eff. Samples/sec: 39.70 | Avg Loss: 1.3316 | LR: 3.32e-04
+2025-05-27 17:08:39 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E45 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:15:57 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E46: Applying leftover grads from accum (1 steps).
+2025-05-27 17:15:57 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 46 Training Summary: AvgLoss=1.3247, OptSteps=136, FinalLR=3.27e-04
+2025-05-27 17:15:57 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 46/80 | Duration: 438.55s | Eff. Samples/sec: 39.55 | Avg Loss: 1.3247 | LR: 3.27e-04
+2025-05-27 17:15:57 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E46 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:23:14 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E47: Applying leftover grads from accum (1 steps).
+2025-05-27 17:23:14 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 47 Training Summary: AvgLoss=1.2994, OptSteps=136, FinalLR=3.22e-04
+2025-05-27 17:23:14 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 47/80 | Duration: 437.09s | Eff. Samples/sec: 39.68 | Avg Loss: 1.2994 | LR: 3.22e-04
+2025-05-27 17:23:14 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E47 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:30:34 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E48: Applying leftover grads from accum (1 steps).
+2025-05-27 17:30:34 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 48 Training Summary: AvgLoss=1.1724, OptSteps=136, FinalLR=3.16e-04
+2025-05-27 17:30:34 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 48/80 | Duration: 439.64s | Eff. Samples/sec: 39.45 | Avg Loss: 1.1724 | LR: 3.16e-04
+2025-05-27 17:30:34 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E48 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:37:50 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E49: Applying leftover grads from accum (1 steps).
+2025-05-27 17:37:50 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 49 Training Summary: AvgLoss=1.2528, OptSteps=136, FinalLR=3.11e-04
+2025-05-27 17:37:50 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 49/80 | Duration: 435.93s | Eff. Samples/sec: 39.79 | Avg Loss: 1.2528 | LR: 3.11e-04
+2025-05-27 17:37:50 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E49 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 17:45:08 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E50: Applying leftover grads from accum (1 steps).
+2025-05-27 17:45:09 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 50 Training Summary: AvgLoss=1.1995, OptSteps=136, FinalLR=3.05e-04
+2025-05-27 17:45:09 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 50/80 | Duration: 438.60s | Eff. Samples/sec: 39.54 | Avg Loss: 1.1995 | LR: 3.05e-04
+2025-05-27 17:45:09 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:218] - --- Starting Linear Probe (after SSL Epoch 50) ---
+2025-05-27 17:45:09 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:231] - Probe E50: Feature dim for linear classifier: 1536
+2025-05-27 18:05:29 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:269] - Linear Probe (SSL E50) Validation Accuracy: 31.73% (145/457)
+2025-05-27 18:05:29 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E50 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:12:47 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E51: Applying leftover grads from accum (1 steps).
+2025-05-27 18:12:47 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 51 Training Summary: AvgLoss=1.1657, OptSteps=136, FinalLR=3.00e-04
+2025-05-27 18:12:47 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 51/80 | Duration: 437.77s | Eff. Samples/sec: 39.62 | Avg Loss: 1.1657 | LR: 3.00e-04
+2025-05-27 18:12:47 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E51 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:20:03 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E52: Applying leftover grads from accum (1 steps).
+2025-05-27 18:20:03 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 52 Training Summary: AvgLoss=1.1419, OptSteps=136, FinalLR=2.94e-04
+2025-05-27 18:20:03 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 52/80 | Duration: 436.46s | Eff. Samples/sec: 39.74 | Avg Loss: 1.1419 | LR: 2.94e-04
+2025-05-27 18:20:03 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E52 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:27:20 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E53: Applying leftover grads from accum (1 steps).
+2025-05-27 18:27:21 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 53 Training Summary: AvgLoss=1.1529, OptSteps=136, FinalLR=2.89e-04
+2025-05-27 18:27:21 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 53/80 | Duration: 437.26s | Eff. Samples/sec: 39.67 | Avg Loss: 1.1529 | LR: 2.89e-04
+2025-05-27 18:27:21 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E53 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:34:37 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E54: Applying leftover grads from accum (1 steps).
+2025-05-27 18:34:38 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 54 Training Summary: AvgLoss=1.0833, OptSteps=136, FinalLR=2.83e-04
+2025-05-27 18:34:38 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 54/80 | Duration: 437.05s | Eff. Samples/sec: 39.68 | Avg Loss: 1.0833 | LR: 2.83e-04
+2025-05-27 18:34:38 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E54 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:41:54 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E55: Applying leftover grads from accum (1 steps).
+2025-05-27 18:41:54 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 55 Training Summary: AvgLoss=1.0533, OptSteps=136, FinalLR=2.77e-04
+2025-05-27 18:41:54 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 55/80 | Duration: 436.49s | Eff. Samples/sec: 39.74 | Avg Loss: 1.0533 | LR: 2.77e-04
+2025-05-27 18:41:54 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E55 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:49:12 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E56: Applying leftover grads from accum (1 steps).
+2025-05-27 18:49:13 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 56 Training Summary: AvgLoss=1.0084, OptSteps=136, FinalLR=2.72e-04
+2025-05-27 18:49:13 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 56/80 | Duration: 438.51s | Eff. Samples/sec: 39.55 | Avg Loss: 1.0084 | LR: 2.72e-04
+2025-05-27 18:49:13 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E56 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 18:56:28 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E57: Applying leftover grads from accum (1 steps).
+2025-05-27 18:56:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 57 Training Summary: AvgLoss=1.0223, OptSteps=136, FinalLR=2.66e-04
+2025-05-27 18:56:28 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 57/80 | Duration: 435.16s | Eff. Samples/sec: 39.86 | Avg Loss: 1.0223 | LR: 2.66e-04
+2025-05-27 18:56:28 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E57 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 19:03:44 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E58: Applying leftover grads from accum (1 steps).
+2025-05-27 19:03:44 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 58 Training Summary: AvgLoss=1.0295, OptSteps=136, FinalLR=2.61e-04
+2025-05-27 19:03:44 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 58/80 | Duration: 436.24s | Eff. Samples/sec: 39.76 | Avg Loss: 1.0295 | LR: 2.61e-04
+2025-05-27 19:03:44 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E58 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 19:11:00 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E59: Applying leftover grads from accum (1 steps).
+2025-05-27 19:11:01 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 59 Training Summary: AvgLoss=1.0116, OptSteps=136, FinalLR=2.55e-04
+2025-05-27 19:11:01 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 59/80 | Duration: 436.47s | Eff. Samples/sec: 39.74 | Avg Loss: 1.0116 | LR: 2.55e-04
+2025-05-27 19:11:01 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E59 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 19:18:19 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E60: Applying leftover grads from accum (1 steps).
+2025-05-27 19:18:19 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 60 Training Summary: AvgLoss=1.0162, OptSteps=136, FinalLR=2.49e-04
+2025-05-27 19:18:19 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 60/80 | Duration: 438.35s | Eff. Samples/sec: 39.57 | Avg Loss: 1.0162 | LR: 2.49e-04
+2025-05-27 19:18:19 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:218] - --- Starting Linear Probe (after SSL Epoch 60) ---
+2025-05-27 19:18:19 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:231] - Probe E60: Feature dim for linear classifier: 1536
+2025-05-27 19:38:40 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:269] - Linear Probe (SSL E60) Validation Accuracy: 45.30% (207/457)
+2025-05-27 19:38:40 - __main__ - INFO - [main_pretrain_script:175] - New best probe: 45.30% (SSL E60). Saving best model.
+2025-05-27 19:38:40 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:193] - Saving checkpoint (reflecting completion of SSL epoch 60) to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth...
+2025-05-27 19:38:45 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:207] - Checkpoint for SSL epoch 60 saved to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-05-27 19:38:45 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:193] - Saving checkpoint (reflecting completion of SSL epoch 60) to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_epoch_60.pth...
+2025-05-27 19:38:53 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:207] - Checkpoint for SSL epoch 60 saved to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_epoch_60.pth
+2025-05-27 19:38:53 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E60 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 19:46:12 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E61: Applying leftover grads from accum (1 steps).
+2025-05-27 19:46:12 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 61 Training Summary: AvgLoss=1.0079, OptSteps=136, FinalLR=2.44e-04
+2025-05-27 19:46:12 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 61/80 | Duration: 439.60s | Eff. Samples/sec: 39.45 | Avg Loss: 1.0079 | LR: 2.44e-04
+2025-05-27 19:46:12 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E61 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 19:53:27 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E62: Applying leftover grads from accum (1 steps).
+2025-05-27 19:53:27 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 62 Training Summary: AvgLoss=0.9633, OptSteps=136, FinalLR=2.38e-04
+2025-05-27 19:53:27 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 62/80 | Duration: 434.71s | Eff. Samples/sec: 39.90 | Avg Loss: 0.9633 | LR: 2.38e-04
+2025-05-27 19:53:27 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E62 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:00:47 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E63: Applying leftover grads from accum (1 steps).
+2025-05-27 20:00:48 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 63 Training Summary: AvgLoss=0.9881, OptSteps=136, FinalLR=2.33e-04
+2025-05-27 20:00:48 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 63/80 | Duration: 440.65s | Eff. Samples/sec: 39.36 | Avg Loss: 0.9881 | LR: 2.33e-04
+2025-05-27 20:00:48 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E63 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:08:03 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E64: Applying leftover grads from accum (1 steps).
+2025-05-27 20:08:03 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 64 Training Summary: AvgLoss=0.9128, OptSteps=136, FinalLR=2.27e-04
+2025-05-27 20:08:03 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 64/80 | Duration: 435.35s | Eff. Samples/sec: 39.84 | Avg Loss: 0.9128 | LR: 2.27e-04
+2025-05-27 20:08:03 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E64 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:15:20 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E65: Applying leftover grads from accum (1 steps).
+2025-05-27 20:15:20 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 65 Training Summary: AvgLoss=0.9150, OptSteps=136, FinalLR=2.21e-04
+2025-05-27 20:15:20 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 65/80 | Duration: 437.02s | Eff. Samples/sec: 39.69 | Avg Loss: 0.9150 | LR: 2.21e-04
+2025-05-27 20:15:20 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E65 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:22:38 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E66: Applying leftover grads from accum (1 steps).
+2025-05-27 20:22:38 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 66 Training Summary: AvgLoss=0.8691, OptSteps=136, FinalLR=2.16e-04
+2025-05-27 20:22:38 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 66/80 | Duration: 438.43s | Eff. Samples/sec: 39.56 | Avg Loss: 0.8691 | LR: 2.16e-04
+2025-05-27 20:22:38 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E66 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:29:56 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E67: Applying leftover grads from accum (1 steps).
+2025-05-27 20:29:56 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 67 Training Summary: AvgLoss=0.8866, OptSteps=136, FinalLR=2.10e-04
+2025-05-27 20:29:56 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 67/80 | Duration: 437.59s | Eff. Samples/sec: 39.64 | Avg Loss: 0.8866 | LR: 2.10e-04
+2025-05-27 20:29:56 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E67 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:37:12 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E68: Applying leftover grads from accum (1 steps).
+2025-05-27 20:37:12 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 68 Training Summary: AvgLoss=0.9052, OptSteps=136, FinalLR=2.05e-04
+2025-05-27 20:37:12 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 68/80 | Duration: 436.36s | Eff. Samples/sec: 39.75 | Avg Loss: 0.9052 | LR: 2.05e-04
+2025-05-27 20:37:12 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E68 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:44:31 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E69: Applying leftover grads from accum (1 steps).
+2025-05-27 20:44:32 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 69 Training Summary: AvgLoss=0.8649, OptSteps=136, FinalLR=1.99e-04
+2025-05-27 20:44:32 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 69/80 | Duration: 439.15s | Eff. Samples/sec: 39.49 | Avg Loss: 0.8649 | LR: 1.99e-04
+2025-05-27 20:44:32 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E69 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 20:51:50 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E70: Applying leftover grads from accum (1 steps).
+2025-05-27 20:51:50 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 70 Training Summary: AvgLoss=0.8345, OptSteps=136, FinalLR=1.94e-04
+2025-05-27 20:51:50 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 70/80 | Duration: 438.47s | Eff. Samples/sec: 39.56 | Avg Loss: 0.8345 | LR: 1.94e-04
+2025-05-27 20:51:50 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:218] - --- Starting Linear Probe (after SSL Epoch 70) ---
+2025-05-27 20:51:50 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:231] - Probe E70: Feature dim for linear classifier: 1536
+2025-05-27 21:12:09 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:269] - Linear Probe (SSL E70) Validation Accuracy: 39.61% (181/457)
+2025-05-27 21:12:09 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E70 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:19:27 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E71: Applying leftover grads from accum (1 steps).
+2025-05-27 21:19:28 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 71 Training Summary: AvgLoss=0.8633, OptSteps=136, FinalLR=1.88e-04
+2025-05-27 21:19:28 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 71/80 | Duration: 438.33s | Eff. Samples/sec: 39.57 | Avg Loss: 0.8633 | LR: 1.88e-04
+2025-05-27 21:19:28 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E71 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:26:45 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E72: Applying leftover grads from accum (1 steps).
+2025-05-27 21:26:46 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 72 Training Summary: AvgLoss=0.8003, OptSteps=136, FinalLR=1.83e-04
+2025-05-27 21:26:46 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 72/80 | Duration: 437.91s | Eff. Samples/sec: 39.61 | Avg Loss: 0.8003 | LR: 1.83e-04
+2025-05-27 21:26:46 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E72 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:33:59 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E73: Applying leftover grads from accum (1 steps).
+2025-05-27 21:34:00 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 73 Training Summary: AvgLoss=0.8072, OptSteps=136, FinalLR=1.77e-04
+2025-05-27 21:34:00 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 73/80 | Duration: 434.22s | Eff. Samples/sec: 39.94 | Avg Loss: 0.8072 | LR: 1.77e-04
+2025-05-27 21:34:00 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E73 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:41:14 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E74: Applying leftover grads from accum (1 steps).
+2025-05-27 21:41:15 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 74 Training Summary: AvgLoss=0.8025, OptSteps=136, FinalLR=1.72e-04
+2025-05-27 21:41:15 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 74/80 | Duration: 434.70s | Eff. Samples/sec: 39.90 | Avg Loss: 0.8025 | LR: 1.72e-04
+2025-05-27 21:41:15 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E74 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:48:29 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E75: Applying leftover grads from accum (1 steps).
+2025-05-27 21:48:30 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 75 Training Summary: AvgLoss=0.7981, OptSteps=136, FinalLR=1.67e-04
+2025-05-27 21:48:30 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 75/80 | Duration: 435.25s | Eff. Samples/sec: 39.85 | Avg Loss: 0.7981 | LR: 1.67e-04
+2025-05-27 21:48:30 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E75 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 21:55:48 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E76: Applying leftover grads from accum (1 steps).
+2025-05-27 21:55:48 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 76 Training Summary: AvgLoss=0.7979, OptSteps=136, FinalLR=1.61e-04
+2025-05-27 21:55:48 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 76/80 | Duration: 438.25s | Eff. Samples/sec: 39.58 | Avg Loss: 0.7979 | LR: 1.61e-04
+2025-05-27 21:55:48 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E76 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 22:03:08 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E77: Applying leftover grads from accum (1 steps).
+2025-05-27 22:03:08 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 77 Training Summary: AvgLoss=0.7898, OptSteps=136, FinalLR=1.56e-04
+2025-05-27 22:03:08 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 77/80 | Duration: 439.80s | Eff. Samples/sec: 39.44 | Avg Loss: 0.7898 | LR: 1.56e-04
+2025-05-27 22:03:08 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E77 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 22:10:23 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E78: Applying leftover grads from accum (1 steps).
+2025-05-27 22:10:23 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 78 Training Summary: AvgLoss=0.7489, OptSteps=136, FinalLR=1.51e-04
+2025-05-27 22:10:23 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 78/80 | Duration: 435.30s | Eff. Samples/sec: 39.84 | Avg Loss: 0.7489 | LR: 1.51e-04
+2025-05-27 22:10:23 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E78 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 22:17:38 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E79: Applying leftover grads from accum (1 steps).
+2025-05-27 22:17:38 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 79 Training Summary: AvgLoss=0.7445, OptSteps=136, FinalLR=1.46e-04
+2025-05-27 22:17:38 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 79/80 | Duration: 434.90s | Eff. Samples/sec: 39.88 | Avg Loss: 0.7445 | LR: 1.46e-04
+2025-05-27 22:17:38 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E79 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 22:24:55 - phase3_pretraining.pretrain.trainer - WARNING - [train_one_epoch:159] - E80: Applying leftover grads from accum (1 steps).
+2025-05-27 22:24:56 - phase3_pretraining.pretrain.trainer - INFO - [train_one_epoch:176] - Epoch 80 Training Summary: AvgLoss=0.6796, OptSteps=136, FinalLR=1.41e-04
+2025-05-27 22:24:56 - __main__ - INFO - [main_pretrain_script:168] - SSL Epoch 80/80 | Duration: 437.72s | Eff. Samples/sec: 39.62 | Avg Loss: 0.6796 | LR: 1.41e-04
+2025-05-27 22:24:56 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:218] - --- Starting Linear Probe (after SSL Epoch 80) ---
+2025-05-27 22:24:56 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:231] - Probe E80: Feature dim for linear classifier: 1536
+2025-05-27 22:45:16 - phase3_pretraining.pretrain.trainer - INFO - [evaluate_linear_probe:269] - Linear Probe (SSL E80) Validation Accuracy: 35.45% (162/457)
+2025-05-27 22:45:16 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:193] - Saving checkpoint (reflecting completion of SSL epoch 80) to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_epoch_80.pth...
+2025-05-27 22:45:21 - phase3_pretraining.pretrain.trainer - INFO - [save_checkpoint:207] - Checkpoint for SSL epoch 80 saved to /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_epoch_80.pth
+2025-05-27 22:45:22 - __main__ - DEBUG - [main_pretrain_script:184] - CUDA Mem E80 END: Alloc 4325.1MB, MaxAlloc 9441.7MB
+2025-05-27 22:45:22 - __main__ - INFO - [main_pretrain_script:192] - Pre-training finished/interrupted. Absolute epochs completed: 80.
