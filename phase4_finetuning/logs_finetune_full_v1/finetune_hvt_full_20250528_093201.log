@@ -142,3 +142,6 @@
 2025-05-28 10:43:23 - __main__ - INFO - [main_execution_logic:363] - E22: Val f1_macro (0.1744) not better than 0.1955. Patience: 3/10
 2025-05-28 10:43:23 - __main__ - DEBUG - [main_execution_logic:366] - CUDA Mem E22 End: Alloc 3161.6MB
 2025-05-28 10:46:17 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:115] - Epoch 23 training finished. Avg Loss: 1.8811, Final LR for epoch: 8.93e-05, Opt Steps: 228
+2025-05-28 10:46:36 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:165] - Validation finished. Avg Loss: 1.9226, accuracy: 0.2544, f1_macro: 0.1841, f1_weighted: 0.1908, precision_macro: 0.1682, precision_weighted: 0.1749, recall_macro: 0.2497, recall_weighted: 0.2544, f1_Bacterial_Blight: 0.3529, f1_Curl_Virus: 0.3165, f1_Healthy_Leaf: 0.0000, f1_Herbicide_Growth_Damage: 0.3327, f1_Leaf_Hopper_Jassids: 0.0081, f1_Leaf_Redding: 0.2787, f1_Leaf_Variegation: 0.0000
+2025-05-28 10:46:36 - __main__ - INFO - [main_execution_logic:363] - E23: Val f1_macro (0.1841) not better than 0.1955. Patience: 4/10
+2025-05-28 10:46:36 - __main__ - DEBUG - [main_execution_logic:366] - CUDA Mem E23 End: Alloc 3161.6MB
