@@ -1,113 +1,134 @@
-# phase3_pretraining/config.py
-import torch
+# phase4_finetuning/config.py
 import os
+import torch
 import logging
 
-# --- Absolute Project Root Path ---
-PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25"
+# --- Logger for this config file ---
+_config_module_logger = logging.getLogger(__name__)
+if not logging.getLogger().hasHandlers():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
-# --- Path Construction ---
-DATASET_BASE_DIR_NAME = "SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection"
-DATA_ROOT = os.path.join(PROJECT_ROOT_PATH, DATASET_BASE_DIR_NAME)
-PACKAGE_ROOT_PATH = os.path.dirname(os.path.abspath(__file__))
+# --- Project Path Configuration ---
+try:
+    PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
+    PROJECT_ROOT_PATH = os.path.dirname(PACKAGE_ROOT)
+except NameError:
+    PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25" # MUST BE CORRECT
+    PACKAGE_ROOT = os.path.join(PROJECT_ROOT_PATH, "phase4_finetuning")
+    _config_module_logger.warning(f"Guessed PROJECT_ROOT_PATH: {PROJECT_ROOT_PATH} and PACKAGE_ROOT: {PACKAGE_ROOT}")
 
-# Using the *original* checkpoint directory where your best_probe.pth is located
-# If you want to save *new* checkpoints from the resumed run to a different dir, change CHECKPOINT_DIR_NAME here.
-# For simplicity, let's assume we continue saving to the same directory structure.
-ORIGINAL_CHECKPOINT_DIR_NAME = "pretrain_checkpoints_hvt_xl" # From your path
-LOG_DIR_NAME = "logs_t4_ssl_resumed_from_best_probe"
-CHECKPOINT_DIR_NAME = ORIGINAL_CHECKPOINT_DIR_NAME # Save new checkpoints to the same dir structure
+# --- Default Values ---
+DEFAULT_RANDOM_SEED = 42
+DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+DEFAULT_DATASET_BASE_PATH = os.path.join(PROJECT_ROOT_PATH, "SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection")
+DEFAULT_NUM_CLASSES = 7
+DEFAULT_ORIGINAL_DATASET_NAME = "Original Dataset"
+DEFAULT_AUGMENTED_DATASET_NAME = "Augmented Dataset"
+DEFAULT_TRAIN_SPLIT_RATIO_FINETUNE = 0.8
 
-# --- Core Settings ---
-RANDOM_SEED = 42 # Keep seed consistent with the initial run for any new random initializations
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+# --- Attempt to Import Phase 3 Config ---
+phase3_config_imported = False
+phase3_cfg = {}
+try:
+    from phase3_pretraining.config import config as phase3_base_config_dict_imported
+    phase3_cfg = phase3_base_config_dict_imported.copy()
+    phase3_config_imported = True
+    _config_module_logger.info("Successfully imported base config dict from phase3_pretraining.config")
+except ImportError as e:
+    _config_module_logger.warning(f"Could not import config from phase3_pretraining: {e}. Phase 4 will use its own defaults.")
 
-# --- PyTorch Performance Settings (for T4) ---
-ENABLE_TORCH_COMPILE = False
-TORCH_COMPILE_MODE = "reduce-overhead"
-MATMUL_PRECISION = 'high'
-CUDNN_BENCHMARK = True
+# --- Resolve Key Parameters ---
+SEED = phase3_cfg.get('seed', DEFAULT_RANDOM_SEED)
+DEVICE_RESOLVED = phase3_cfg.get('device', DEFAULT_DEVICE)
+DATA_ROOT_RESOLVED = phase3_cfg.get('data_root', DEFAULT_DATASET_BASE_PATH)
+NUM_CLASSES_RESOLVED = phase3_cfg.get('num_classes', DEFAULT_NUM_CLASSES)
+ORIGINAL_DATASET_NAME_RESOLVED = phase3_cfg.get('original_dataset_name', DEFAULT_ORIGINAL_DATASET_NAME)
+AUGMENTED_DATASET_NAME_RESOLVED = phase3_cfg.get('augmented_dataset_name', DEFAULT_AUGMENTED_DATASET_NAME)
 
-# --- Configuration Dictionary ---
-config = {
-    # General Setup
-    "seed": RANDOM_SEED,
-    "device": DEVICE,
-    "PROJECT_ROOT_PATH": PROJECT_ROOT_PATH,
-    "PACKAGE_ROOT_PATH": PACKAGE_ROOT_PATH,
-    "log_dir_name": LOG_DIR_NAME,
-    "log_file_pretrain": "ssl_t4_resumed_best_probe.log", # New log file
-    "checkpoint_dir_name": CHECKPOINT_DIR_NAME, # Where new checkpoints will be saved by trainer
-    "enable_torch_compile": ENABLE_TORCH_COMPILE,
-    "torch_compile_mode": TORCH_COMPILE_MODE,
-    "matmul_precision": MATMUL_PRECISION,
-    "cudnn_benchmark": CUDNN_BENCHMARK,
+# Path to the HVT SSL Pre-trained Checkpoint
+default_phase3_ckpt_filename = f"{phase3_cfg.get('model_arch_name_for_ckpt', 'hvt_xl_simclr')}_best_probe.pth" # Or specific epoch
+default_phase3_ckpt_path = None
+if phase3_config_imported:
+    phase3_pkg_root = phase3_cfg.get('PACKAGE_ROOT_PATH', os.path.join(PROJECT_ROOT_PATH, 'phase3_pretraining'))
+    phase3_ckpt_dir_name = phase3_cfg.get('checkpoint_dir_name', 'pretrain_checkpoints_hvt_xl')
+    # Constructing the path based on your previous successful load:
+    default_phase3_ckpt_path = "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth" # From your log
+    _config_module_logger.info(f"Using Phase 3 checkpoint path: {default_phase3_ckpt_path}")
+else:
+    default_phase3_ckpt_path = "/path/to/your/MANUALLY_SPECIFIED_phase3_best_probe.pth"
+    _config_module_logger.warning(f"Phase 3 config import failed. PRETRAINED_HVT_CHECKPOINT_PATH set to: {default_phase3_ckpt_path}. VERIFY THIS.")
 
-    # --- Resuming Training ---
-    # Path to the checkpoint you want to resume from.
-    "resume_checkpoint_path": "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth", # <<< YOUR SPECIFIED PATH
-
-    # Dataset Config (should match initial run)
-    "data_root": DATA_ROOT,
-    "original_dataset_name": "Original Dataset",
-    "augmented_dataset_name": "Augmented Dataset",
-    "train_split_ratio": 0.95,
-    "num_classes": 7,
-    "num_workers": 4,
-    "prefetch_factor": 2 if DEVICE == 'cuda' and 4 > 0 else None,
-
-    # HVT Backbone Parameters (MUST MATCH THE ARCHITECTURE OF THE LOADED CHECKPOINT)
-    "hvt_params_for_backbone": {
-        "patch_size": 14, "embed_dim_rgb": 192, "embed_dim_spectral": 192,
-        "spectral_channels": 0, "depths": [3, 6, 24, 3], "num_heads": [6, 12, 24, 48],
-        "mlp_ratio": 4.0, "qkv_bias": True, "model_drop_rate": 0.0, "attn_drop_rate": 0.0,
-        "drop_path_rate": 0.2, "norm_layer_name": "LayerNorm", "use_dfca": False,
-        "use_gradient_checkpointing": True, # CRITICAL for T4 with HVT-XL
+HVT_ARCH_PARAMS_FOR_FINETUNE = phase3_cfg.get('hvt_params_for_backbone', {})
+if not HVT_ARCH_PARAMS_FOR_FINETUNE: # If empty or not found
+    _config_module_logger.warning("Using FALLBACK HVT architecture params for fine-tuning. VERIFY!")
+    HVT_ARCH_PARAMS_FOR_FINETUNE = {
+        "patch_size": 14, "embed_dim_rgb": 192, "embed_dim_spectral": 192, "spectral_channels": 0,
+        "depths": [3, 6, 24, 3], "num_heads": [6, 12, 24, 48], "mlp_ratio": 4.0, "qkv_bias": True,
+        "model_drop_rate": 0.0, "attn_drop_rate": 0.0, "drop_path_rate": 0.2, "norm_layer_name": "LayerNorm",
+        "use_dfca": False, "use_gradient_checkpointing": True,
         "ssl_enable_mae": False, "ssl_enable_contrastive": False, "enable_consistency_loss_heads": False,
-        # Irrelevant defaults
-        "dfca_embed_dim_match_rgb": True, "dfca_num_heads": 32, "dfca_drop_rate": 0.1, "dfca_use_disease_mask": True,
-        "ssl_mae_mask_ratio": 0.75, "ssl_mae_decoder_dim": 64, "ssl_mae_norm_pix_loss": True,
-        "ssl_contrastive_projector_dim": 128, "ssl_contrastive_projector_depth": 2,
-    },
+    }
+# Fine-tuning specific overrides for HVT architecture
+HVT_ARCH_PARAMS_FOR_FINETUNE['model_drop_rate'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('model_drop_rate_finetune', 0.15) # Slightly increased dropout
+HVT_ARCH_PARAMS_FOR_FINETUNE['drop_path_rate'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('drop_path_rate_finetune', 0.15) # Slightly increased
+HVT_ARCH_PARAMS_FOR_FINETUNE['use_gradient_checkpointing'] = HVT_ARCH_PARAMS_FOR_FINETUNE.get('use_gradient_checkpointing_finetune', True) # KEEP TRUE for T4
 
-    # SimCLR Pre-training Specific Configuration
-    # These should ideally match the settings of the run you are resuming for optimizer/scheduler state to be valid.
-    "pretrain_img_size": (448, 448),
-    "pretrain_epochs": 80,        # TOTAL desired epochs. If best_probe was after epoch 20, it will run for 60 more.
-    "pretrain_batch_size": 32,    # Keep consistent with the run being resumed
-    "accumulation_steps": 2,      # Keep consistent (Effective batch size = 64)
-    "pretrain_lr": 5e-4,          # Must be the SAME base LR used to save the checkpoint for scheduler to resume correctly.
-    "pretrain_optimizer": "AdamW",# Must be the SAME optimizer
-    "pretrain_scheduler": "WarmupCosine", # Must be the SAME scheduler
-    "warmup_epochs": 10,          # Must be the SAME warmup epochs
-    "eta_min_lr": 1e-6,
-    "pretrain_weight_decay": 0.05,
-    "temperature": 0.1,           # Keep consistent with the run being resumed
+# --- Fine-tuning Specific Configurations ---
+config = {
+    "seed": SEED, "device": DEVICE_RESOLVED,
+    "log_dir": "logs_finetune_attempt2", # New log directory
+    "log_file_finetune": "finetune_hvt_xl_attempt2.log",
+    "best_model_filename": "best_finetuned_hvt_xl_attempt2.pth",
+    "final_model_filename": "final_finetuned_hvt_xl_attempt2.pth",
+    "checkpoint_save_dir_name": "checkpoints_attempt2",
 
-    # SimCLR Projection Head (dimensions should match the saved projection head)
-    "projection_dim": 256,
-    "projection_hidden_dim": 4096,
+    "data_root": DATA_ROOT_RESOLVED, "original_dataset_name": ORIGINAL_DATASET_NAME_RESOLVED,
+    "augmented_dataset_name": None, # Typically don't use SSL-augmented data for supervised finetuning
+    "img_size": (448, 448), "num_classes": NUM_CLASSES_RESOLVED,
+    "train_split_ratio": 0.8, "normalize_data": True, "use_weighted_sampler": True,
+    "num_workers": 4, # Keep as per T4
+    "prefetch_factor": 2 if DEVICE_RESOLVED == 'cuda' and 4 > 0 else None,
 
-    # SimCLR Augmentations (should match the run being resumed)
-    "simclr_s": 1.0, "simclr_p_grayscale": 0.2, "simclr_p_gaussian_blur": 0.5, "simclr_rrc_scale_min": 0.08,
+    "model_architecture_name": "DiseaseAwareHVT_SSL_Finetuned_Attempt2",
+    "pretrained_checkpoint_path": default_phase3_ckpt_path, # Resolved path to SSL model
+    "load_pretrained_backbone": True,
+    "freeze_backbone_epochs": 10,      # <<< INCREASED: Freeze backbone for more initial epochs
+    "unfreeze_backbone_lr_factor": 0.1, # LR for backbone when unfrozen will be 0.1 * main_lr
 
-    # Linear Probing Configuration
-    "evaluate_every_n_epochs": 10,
-    "linear_probe_epochs": 10,      # Or 20, as per your original run
-    "linear_probe_lr": 0.1,
-    "probe_optimizer": "SGD", "probe_momentum": 0.9, "probe_weight_decay": 0.0,
-    "probe_batch_size": 64,         # Keep as it was for T4
+    "hvt_params_for_model_init": HVT_ARCH_PARAMS_FOR_FINETUNE,
 
-    # Checkpointing
-    "save_every_n_epochs": 20,      # Or your original save frequency
-    "model_arch_name_for_ckpt": "hvt_xl_simclr_t4_resumed", # New name for checkpoints from this resumed run
-    "clip_grad_norm": 1.0,
+    "enable_torch_compile": False, # Keep False for T4 stability during tuning
+    "torch_compile_mode": "reduce-overhead",
+    "matmul_precision": 'high', "cudnn_benchmark": True,
+
+    "epochs": 60,  # <<< INCREASED: Total fine-tuning epochs
+    "batch_size": 16, # T4 constraint for HVT-XL 448px
+    "accumulation_steps": 2, # Effective BS = 32
+    "amp_enabled": True, "clip_grad_norm": 1.0, "log_interval": 20,
+
+    "optimizer": "AdamW",
+    "learning_rate": 2e-5, # <<< SLIGHTLY REDUCED initial LR for full model fine-tuning
+                           # The head will initially train with head_lr_multiplier * this.
+    "head_lr_multiplier": 5.0, # <<< INCREASED: Head trains with a higher LR (5 * 2e-5 = 1e-4) during freeze phase
+    "weight_decay": 0.05,
+    "optimizer_params": {"betas": (0.9, 0.999)},
+
+    "scheduler": "WarmupCosine",
+    "warmup_epochs": 5, # Warmup over 5 epochs (can be total, or per phase if optimizer is reset)
+                        # If backbone is frozen, this warmup applies to the head.
+                        # When backbone unfreezes, a new optimizer/scheduler for it might be better, or continue.
+                        # The current trainer uses one optimizer and scheduler.
+    "eta_min_lr": 1e-7,
+
+    "loss_label_smoothing": 0.1,
+    "augmentations_enabled": True,
+
+    "evaluate_every_n_epochs": 1,
+    "early_stopping_patience": 15, # Slightly more patience
+    "metric_to_monitor_early_stopping": "f1_macro",
 }
 
-# --- Logging after config dict is defined ---
-_config_logger = logging.getLogger(__name__)
-_config_logger.info(f"Phase 3 Configuration (Resuming on T4 GPU) Loaded from: {__file__}")
-_config_logger.info(f"Resume Checkpoint Path: {config.get('resume_checkpoint_path')}")
-_config_logger.info(f"Target Total Pre-training Epochs: {config['pretrain_epochs']}")
-_config_logger.info(f"Device: {DEVICE}, Effective Batch Size: {config['pretrain_batch_size'] * config['accumulation_steps']}")
-_config_logger.info(f"Gradient Checkpointing for HVT Backbone: {config['hvt_params_for_backbone']['use_gradient_checkpointing']}")
+NUM_CLASSES = config['num_classes']
+_config_module_logger.info(f"Phase 4 Config (Finetune Attempt 2 for T4) Loaded. Pretrained: {config.get('pretrained_checkpoint_path')}")
+_config_module_logger.info(f"Finetune LR: {config['learning_rate']}, Head LR Mult: {config['head_lr_multiplier']}, Freeze Epochs: {config['freeze_backbone_epochs']}")
+_config_module_logger.info(f"Total Fine-tune Epochs: {config['epochs']}, Eff. BS: {config['batch_size']*config['accumulation_steps']}")

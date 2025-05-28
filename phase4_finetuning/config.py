@@ -94,7 +94,7 @@ config = {
     "enable_torch_compile": False, # Keep False for T4 for stability
     "torch_compile_mode": "reduce-overhead", "matmul_precision": "high", "cudnn_benchmark": True,
 
-    "epochs": 90, # Increased total epochs for full fine-tuning
+    "epochs": 200, # Increased total epochs for full fine-tuning
     "batch_size": 16, # T4
     "accumulation_steps": 2, # Effective BS = 32
     "amp_enabled": True, "clip_grad_norm": 1.0, "log_interval": 10,
@@ -110,7 +110,7 @@ config = {
 
     "loss_label_smoothing": 0.1, "augmentations_enabled": True,
 
-    "evaluate_every_n_epochs": 1, "early_stopping_patience": 10,
+    "evaluate_every_n_epochs": 1, "early_stopping_patience": 15,
     "metric_to_monitor_early_stopping": "f1_macro",
     "ssl_pretrain_img_size_fallback": tuple(phase3_cfg.get('pretrain_img_size', (448,448))),
 }
