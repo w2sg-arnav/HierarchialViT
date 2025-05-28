@@ -44,3 +44,14 @@
 2025-05-28 09:19:53 - phase4_finetuning.finetune.trainer - INFO - [__init__:44] - Finetuner initialized: device=cuda, accum_steps=2, lr_sched_on_batch=True, AMP=True
 2025-05-28 09:19:53 - phase4_finetuning.finetune.trainer - INFO - [__init__:46] - Using augmentations: FinetuneAugmentation
 2025-05-28 09:19:53 - __main__ - INFO - [main_execution_logic:289] - Starting fine-tuning: 90 epochs. Monitor: 'f1_macro', Patience: 10.
+2025-05-28 09:22:49 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:115] - Epoch 1 training finished. Avg Loss: 1.9948, Final LR for epoch: 2.00e-05, Opt Steps: 228
+2025-05-28 09:23:07 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:165] - Validation finished. Avg Loss: 2.0188, accuracy: 0.1138, f1_macro: 0.0504, f1_weighted: 0.0495, precision_macro: 0.0325, precision_weighted: 0.0321, recall_macro: 0.1182, recall_weighted: 0.1138, f1_Bacterial_Blight: 0.0000, f1_Curl_Virus: 0.1642, f1_Healthy_Leaf: 0.0000, f1_Herbicide_Growth_Damage: 0.0000, f1_Leaf_Hopper_Jassids: 0.1888, f1_Leaf_Redding: 0.0000, f1_Leaf_Variegation: 0.0000
+2025-05-28 09:23:07 - __main__ - CRITICAL - [main_execution_logic:343] - Finetuning error at E1: name 'ReduceLROnPlateau' is not defined
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/main.py", line 327, in main_execution_logic
+    if isinstance(scheduler, ReduceLROnPlateau) and current_val_metric_for_decision is not None: scheduler.step(current_val_metric_for_decision)
+NameError: name 'ReduceLROnPlateau' is not defined
+2025-05-28 09:23:07 - __main__ - INFO - [main_execution_logic:345] - Fine-tuning ended. Last completed epoch: 0.
+2025-05-28 09:23:08 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:173] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_full_v1/checkpoints_full_v1/final_finetuned_hvt_full.pth
+2025-05-28 09:23:08 - __main__ - INFO - [main_execution_logic:348] - Fine-tuning summary: Best validation 'f1_macro': 0.0000
+2025-05-28 09:23:08 - __main__ - INFO - [<module>:356] - Application exited with status code 1.

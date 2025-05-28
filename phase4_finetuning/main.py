@@ -7,7 +7,13 @@ import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.cuda.amp import GradScaler
-from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR, SequentialLR, LinearLR
+from torch.optim.lr_scheduler import (
+    ReduceLROnPlateau,
+    LinearLR,
+    SequentialLR,
+    CosineAnnealingLR,
+    LambdaLR
+)
 import argparse
 import yaml
 import torch.nn.functional as F
@@ -17,23 +23,28 @@ from typing import Tuple, Optional, Dict, Any, List
 import traceback
 from datetime import datetime
 
+# --- Global Logger (initialized in main_execution_logic()) ---
 logger: Optional[logging.Logger] = None
 
+# --- Path Setup (Minimal, relies on `python -m`) ---
+
+# --- Project Imports ---
 try:
     from .config import config as base_finetune_config
     from .dataset import SARCLD2024Dataset
     from .utils.augmentations import FinetuneAugmentation
     from .utils.logging_setup import setup_logging
     from .finetune.trainer import Finetuner
+
     from phase2_model.models.hvt import DiseaseAwareHVT, create_disease_aware_hvt
 except ImportError as e_imp:
-    print(f"CRITICAL IMPORT ERROR in phase4_main.py: {e_imp}.", file=sys.stderr); traceback.print_exc(); sys.exit(1)
+    print(f"CRITICAL IMPORT ERROR in phase4_main.py: {e_imp}. Check PYTHONPATH and module paths.", file=sys.stderr)
+    print("Ensure you are running from the project root (e.g., 'cvpr25/') using 'python -m phase4_finetuning.main'", file=sys.stderr)
+    traceback.print_exc()
+    sys.exit(1)
 
-# --- Helper Functions (get_cosine_schedule_with_warmup_step, load_config_from_yaml_or_default, parse_arguments, set_global_seed, _interpolate_positional_embedding, load_and_prepare_hvt_model) ---
-# These functions remain IDENTICAL to the previous complete main.py I provided.
-# For brevity, I'm not repeating them here. Ensure they are present.
-# Key: load_and_prepare_hvt_model should correctly re-initialize the head.
 
+# --- Helper Functions ---
 def get_cosine_schedule_with_warmup_step(optimizer: torch.optim.Optimizer, num_warmup_steps: int,
                                     num_training_steps: int, num_cycles: float = 0.5, last_epoch: int = -1):
     _local_logger_sched = logging.getLogger(f"{__name__}.get_cosine_schedule_with_warmup_step")
@@ -155,7 +166,6 @@ def load_and_prepare_hvt_model(hvt_model_instance: DiseaseAwareHVT, cfg: Dict[st
     else: _local_logger_load.info("load_pretrained_backbone is False. Backbone random.")
     return hvt_model_instance.to(device)
 
-
 def main_execution_logic():
     global logger
     args = parse_arguments()
@@ -219,36 +229,54 @@ def main_execution_logic():
     freeze_backbone_epochs_cfg = cfg.get("freeze_backbone_epochs", 0)
     head_module_name = "classifier_head"
     
-    base_lr_cfg = cfg["learning_rate"] # This is the base LR, used for backbone if/when unfrozen
-    head_lr_cfg = base_lr_cfg * cfg.get("head_lr_multiplier", 1.0)
-    backbone_unfreeze_lr = base_lr_cfg * cfg.get("unfreeze_backbone_lr_factor", 1.0) # LR for backbone after unfreezing
+    base_lr_cfg = cfg["learning_rate"]
+    head_lr_effective = base_lr_cfg * cfg.get("head_lr_multiplier", 1.0)
+    backbone_target_lr_after_unfreeze = base_lr_cfg * cfg.get("unfreeze_backbone_lr_factor", 1.0)
     wd_cfg = cfg.get("weight_decay", 0.01)
-    optim_common_kwargs = cfg.get("optimizer_params", {})
-
-    param_groups = []
-    # Always add head parameters, they are trainable from the start
-    head_params = [p for n, p in model.named_parameters() if n.startswith(head_module_name + ".")]
-    if head_params:
-        for p in head_params: p.requires_grad = True # Ensure head is trainable
-        param_groups.append({'params': head_params, 'lr': head_lr_cfg, 'name': 'head', 'weight_decay': wd_cfg})
-    else:
-        logger.warning("No parameters found for the head module. Check model structure and head_module_name.")
-
-    # Handle backbone parameters based on freezing strategy
-    backbone_params = [p for n, p in model.named_parameters() if not n.startswith(head_module_name + ".")]
-    if backbone_params:
-        initial_backbone_lr = 0.0 if freeze_backbone_epochs_cfg > 0 else backbone_unfreeze_lr # Start at 0 if frozen
-        for p in backbone_params:
-            p.requires_grad = (freeze_backbone_epochs_cfg == 0) # Only requires_grad if not freezing
-        param_groups.append({'params': backbone_params, 'lr': initial_backbone_lr, 'name': 'backbone', 'weight_decay': wd_cfg})
     
-    if not param_groups or all(len(pg['params'])==0 for pg in param_groups) : logger.critical("No parameters for optimizer after group setup!"); sys.exit(1)
+    # Initial optimizer_params from config (e.g., betas for AdamW)
+    # Make a copy to avoid modifying the original config dict
+    optim_extra_kwargs = cfg.get("optimizer_params", {}).copy()
+    
+    param_groups = []
+    # Head parameters
+    head_params_list = []
+    for n, p in model.named_parameters():
+        if n.startswith(head_module_name + "."):
+            p.requires_grad = True # Ensure head is always trainable
+            head_params_list.append(p)
+    if head_params_list:
+        param_groups.append({'params': head_params_list, 'lr': head_lr_effective, 'name': 'head', 'weight_decay': wd_cfg})
+    else:
+        logger.warning(f"No parameters found for the head module named '{head_module_name}'.")
+
+    # Backbone parameters
+    backbone_params_list = []
+    for n, p in model.named_parameters():
+        if not n.startswith(head_module_name + "."):
+            if freeze_backbone_epochs_cfg > 0:
+                p.requires_grad = False # Initially frozen
+            else:
+                p.requires_grad = True # Trainable from start if not freezing
+            backbone_params_list.append(p)
+
+    if backbone_params_list:
+        # If not freezing, backbone_target_lr_after_unfreeze is the initial LR
+        # If freezing, initial LR is 0, will be updated later.
+        initial_backbone_lr = 0.0 if freeze_backbone_epochs_cfg > 0 else backbone_target_lr_after_unfreeze
+        param_groups.append({'params': backbone_params_list, 'lr': initial_backbone_lr, 'name': 'backbone', 'weight_decay': wd_cfg})
+    
+    param_groups_for_optimizer = [pg for pg in param_groups if len(pg.get('params', [])) > 0]
+
+    if not param_groups_for_optimizer: 
+        logger.critical("No parameters with requires_grad=True for optimizer after group setup!"); 
+        sys.exit(1)
     
     optim_name_cfg = cfg.get("optimizer", "AdamW").lower()
-    if optim_name_cfg == "adamw": optimizer = torch.optim.AdamW(param_groups, **optim_common_kwargs) # LR taken from groups
-    elif optim_name_cfg == "sgd": optim_common_kwargs.setdefault('momentum', 0.9); optimizer = torch.optim.SGD(param_groups, **optim_common_kwargs)
-    else: logger.warning(f"Unsupported optimizer. Default AdamW."); optimizer = torch.optim.AdamW(param_groups, **optim_common_kwargs)
-    logger.info(f"Optimizer: {optimizer.__class__.__name__}. Initial Group LRs: {[pg['lr'] for pg in optimizer.param_groups]}")
+    if optim_name_cfg == "adamw": optimizer = torch.optim.AdamW(param_groups_for_optimizer, **optim_extra_kwargs)
+    elif optim_name_cfg == "sgd": optim_extra_kwargs.setdefault('momentum', 0.9); optimizer = torch.optim.SGD(param_groups_for_optimizer, **optim_extra_kwargs)
+    else: logger.warning(f"Unsupported optimizer. Default AdamW."); optimizer = torch.optim.AdamW(param_groups_for_optimizer, **optim_extra_kwargs)
+    logger.info(f"Optimizer: {optimizer.__class__.__name__}. Initial Group LRs: {[pg['lr'] for pg in optimizer.param_groups]}, Group WDs: {[pg.get('weight_decay', 'N/A') for pg in optimizer.param_groups]}")
 
     # --- Scheduler Setup ---
     scheduler = None; lr_scheduler_on_batch_flag = False
@@ -298,24 +326,22 @@ def main_execution_logic():
                 unfrozen_this_step_count = 0
                 for name, param in model_to_thaw.named_parameters():
                     if not name.startswith(head_module_name + "."): # Unfreeze backbone parameters
-                        if not param.requires_grad:
-                            param.requires_grad = True
-                            unfrozen_this_step_count += 1
+                        if not param.requires_grad: param.requires_grad = True; unfrozen_this_step_count += 1
                 
                 # Update LR for the backbone group in the existing optimizer
+                backbone_lr_to_set = base_lr_cfg * cfg.get("unfreeze_backbone_lr_factor", 1.0)
                 updated_lr_for_backbone = False
                 for pg in optimizer.param_groups:
                     if pg.get('name') == 'backbone':
-                        pg['lr'] = base_lr * cfg.get("unfreeze_backbone_lr_factor", 1.0)
-                        logger.info(f"Optimizer group 'backbone' LR set to {pg['lr']:.2e}.")
+                        pg['lr'] = backbone_lr_to_set
+                        logger.info(f"Optimizer group 'backbone' LR updated to {pg['lr']:.2e}.")
                         updated_lr_for_backbone = True
                         break
-                if not updated_lr_for_backbone and backbone_params_list : # Should not happen if backbone group was added with LR 0
-                     logger.error("Could not find 'backbone' param group to update LR after unfreezing. This is an issue.")
+                if not updated_lr_for_backbone and any(p.requires_grad for p in backbone_params_list):
+                     logger.error("Could not find 'backbone' param group to update LR after unfreezing. This is an issue if backbone params exist and should be trained.")
 
                 current_trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
                 logger.info(f"{unfrozen_this_step_count} backbone params newly set to requires_grad=True. Total trainable params now: {current_trainable_params:,}")
-
 
             finetuner_obj.train_one_epoch(train_loader, epoch_1_based, cfg["epochs"])
             
