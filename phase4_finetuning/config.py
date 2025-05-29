@@ -99,7 +99,7 @@ config = {
     "matmul_precision": 'high', "cudnn_benchmark": True,
 
     "freeze_backbone_epochs": 10, 
-    "epochs": 60,
+    "epochs": 100,
     "batch_size": 16, 
     "accumulation_steps": 2, # Effective BS 32
 

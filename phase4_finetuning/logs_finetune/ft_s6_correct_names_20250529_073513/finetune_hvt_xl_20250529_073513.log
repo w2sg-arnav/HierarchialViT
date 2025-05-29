@@ -1,0 +1,49 @@
+2025-05-29 07:35:13 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/ft_s6_correct_names_20250529_073513/finetune_hvt_xl_20250529_073513.log. Logger 'root' Effective Level: DEBUG
+2025-05-29 07:35:13 - __main__ - INFO - [main_execution_logic:190] - ======== Starting Phase 4 Fine-tuning (Run: ft_s6_correct_names_20250529_073513) ========
+2025-05-29 07:35:13 - __main__ - INFO - [main_execution_logic:191] - Full effective configuration for this run: {'seed': 42, 'device': 'cuda', 'PROJECT_ROOT_PATH': '/teamspace/studios/this_studio/cvpr25', 'PACKAGE_ROOT_PATH': '/teamspace/studios/this_studio/cvpr25/phase4_finetuning', 'run_name_suffix': 'ft_s6_correct_names', 'log_dir': 'logs_finetune', 'log_file_finetune_base': 'finetune_hvt_xl', 'best_model_filename_base': 'best_finetuned_hvt', 'final_model_filename_base': 'final_finetuned_hvt', 'checkpoint_save_dir_name': 'checkpoints', 'enable_torch_compile': False, 'torch_compile_mode': 'reduce-overhead', 'matmul_precision': 'high', 'cudnn_benchmark': True, 'ssl_pretrained_backbone_path': '/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth', 'load_pretrained_backbone_from_ssl': True, 'resume_finetune_checkpoint_path': None, 'load_optimizer_scheduler_on_resume': True, 'ssl_pretrain_img_size_fallback': (448, 448), 'data_root': '/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection', 'original_dataset_name': 'Original Dataset', 'augmented_dataset_name': None, 'img_size': (448, 448), 'num_classes': 7, 'train_split_ratio': 0.8, 'normalize_data': True, 'use_weighted_sampler': True, 'num_workers': 4, 'prefetch_factor': 2, 'model_architecture_name': 'DiseaseAwareHVT_SSL_Finetuned_S6', 'hvt_params_for_model_init': {'patch_size': 14, 'embed_dim_rgb': 192, 'embed_dim_spectral': 192, 'spectral_channels': 0, 'depths': [3, 6, 24, 3], 'num_heads': [6, 12, 24, 48], 'mlp_ratio': 4.0, 'qkv_bias': True, 'model_drop_rate': 0.1, 'attn_drop_rate': 0.0, 'drop_path_rate': 0.1, 'norm_layer_name': 'LayerNorm', 'use_dfca': False, 'use_gradient_checkpointing': True, 'ssl_enable_mae': False, 'ssl_enable_contrastive': False, 'enable_consistency_loss_heads': False, 'dfca_embed_dim_match_rgb': True, 'dfca_num_heads': 32, 'dfca_drop_rate': 0.1, 'dfca_use_disease_mask': True, 'ssl_mae_mask_ratio': 0.75, 'ssl_mae_decoder_dim': 64, 'ssl_mae_norm_pix_loss': True, 'ssl_contrastive_projector_dim': 128, 'ssl_contrastive_projector_depth': 2}, 'epochs': 60, 'batch_size': 16, 'accumulation_steps': 2, 'amp_enabled': True, 'clip_grad_norm': 1.0, 'log_interval': 10, 'optimizer': 'AdamW', 'weight_decay': 0.05, 'optimizer_params': {'betas': (0.9, 0.999), 'eps': 1e-08}, 'freeze_backbone_epochs': 10, 'lr_head_frozen_phase': 5e-05, 'lr_backbone_unfrozen_phase': 5e-06, 'lr_head_unfrozen_phase': 1e-05, 'scheduler': 'WarmupCosine', 'warmup_epochs': 5, 'eta_min_lr': 1e-07, 'loss_label_smoothing': 0.1, 'augmentations_enabled': True, 'evaluate_every_n_epochs': 1, 'early_stopping_patience': 20, 'metric_to_monitor_early_stopping': 'f1_macro'}
+2025-05-29 07:35:13 - __main__ - INFO - [set_global_seed:71] - Global random seed set to: 42
+2025-05-29 07:35:13 - __main__ - INFO - [main_execution_logic:194] - Using device: cuda. GPU: Tesla T4
+2025-05-29 07:35:13 - __main__ - INFO - [main_execution_logic:195] - cudnn.benchmark = True
+2025-05-29 07:35:13 - __main__ - INFO - [main_execution_logic:197] - matmul_precision = 'high'
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:53] - [DATASET INIT - train] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (448, 448), Normalize: True
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-05-29 07:35:13 - phase4_finetuning.dataset - DEBUG - [__init__:67] - [DATASET INIT - train] Dataset name 'None' is None/empty, skipping.
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:105] - [DATASET INIT - train] Total valid image paths collected: 2137 from ~2137 items considered.
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:117] - [DATASET INIT - train] Dataset split size: 1709 samples.
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:128] - [DATASET INIT - train] Base RGB Transforms: Compose(
+      ToImage()
+      ToDtype(scale=True)
+      Resize(size=[448, 448], interpolation=InterpolationMode.BICUBIC, antialias=True)
+      Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=False)
+)
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:53] - [DATASET INIT - val] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (448, 448), Normalize: True
+2025-05-29 07:35:13 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-05-29 07:35:14 - phase4_finetuning.dataset - DEBUG - [__init__:67] - [DATASET INIT - val] Dataset name 'None' is None/empty, skipping.
+2025-05-29 07:35:14 - phase4_finetuning.dataset - INFO - [__init__:105] - [DATASET INIT - val] Total valid image paths collected: 2137 from ~2137 items considered.
+2025-05-29 07:35:14 - phase4_finetuning.dataset - INFO - [__init__:117] - [DATASET INIT - val] Dataset split size: 428 samples.
+2025-05-29 07:35:14 - phase4_finetuning.dataset - INFO - [__init__:128] - [DATASET INIT - val] Base RGB Transforms: Compose(
+      ToImage()
+      ToDtype(scale=True)
+      Resize(size=[448, 448], interpolation=InterpolationMode.BICUBIC, antialias=True)
+      Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=False)
+)
+2025-05-29 07:35:14 - phase4_finetuning.dataset - INFO - [get_class_weights:185] - Computed class weights (inv_freq for loss) for split 'train': [1.191 0.684 1.179 1.115 1.387 0.533 2.806]
+2025-05-29 07:35:14 - __main__ - INFO - [main_execution_logic:209] - Using WeightedRandomSampler.
+2025-05-29 07:35:14 - __main__ - INFO - [main_execution_logic:214] - Dataloaders: Train batches=106, Val batches=27
+2025-05-29 07:35:14 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (448, 448), num_classes: 7
+2025-05-29 07:35:16 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-05-29 07:35:19 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-05-29 07:35:19 - __main__ - INFO - [main_execution_logic:218] - Base HVT model instance created (num_classes=7).
+2025-05-29 07:35:19 - __main__ - INFO - [main_execution_logic:230] - Optimizer created: AdamW.
+2025-05-29 07:35:19 - __main__.load_initial_ssl_weights - INFO - [load_initial_ssl_weights:110] - Loading initial SSL backbone weights from: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-05-29 07:35:21 - __main__.load_initial_ssl_weights - INFO - [load_initial_ssl_weights:133] - SSL Backbone loaded: 450 direct, 0 PE interp, 2 head skipped, 0 mismatches.
+2025-05-29 07:35:21 - __main__.load_initial_ssl_weights - WARNING - [load_initial_ssl_weights:134] - Missing keys in SSL load: ['classifier_head.weight', 'classifier_head.bias']
+2025-05-29 07:35:21 - __main__.load_initial_ssl_weights - INFO - [load_initial_ssl_weights:138] - Re-initialized HVT classifier_head for 7 FT classes (in_features=1536).
+2025-05-29 07:35:22 - __main__ - INFO - [main_execution_logic:245] - Model ready on cuda. Total params: 273,615,751, Initial Trainable: 273,615,751
+2025-05-29 07:35:22 - __main__ - CRITICAL - [<module>:346] - Unhandled CRITICAL exception in __main__ execution: name 'warmup_sched_steps_for_run' is not defined
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/main.py", line 336, in <module>
+    main_execution_logic()
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/main.py", line 258, in main_execution_logic
+    if scheduler: logger.info(f"Scheduler: WarmupCosine. WU Steps from now: {warmup_sched_steps_for_run}, Total Steps from now: {total_steps_for_run}, Resumed internal step: {scheduler.last_epoch}")
+NameError: name 'warmup_sched_steps_for_run' is not defined
