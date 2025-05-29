@@ -513,3 +513,55 @@
 2025-05-29 19:36:53 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:229] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/checkpoint_epoch_50.pth
 2025-05-29 19:36:53 - __main__ - INFO - [main_execution_logic:496] - Epoch 50 completed in 552.26s.
 2025-05-29 19:36:53 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E50 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 19:39:24 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E51 OptStep 50: Grad Norm: 5.8258
+2025-05-29 19:41:56 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E51 OptStep 100: Grad Norm: 3.7324
+2025-05-29 19:44:27 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E51 OptStep 150: Grad Norm: 14.3788
+2025-05-29 19:45:02 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 51 training finished. Avg Loss: 1.0006, Final LR: 8.35e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 19:46:04 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.9071, accuracy: 0.7841, f1_macro: 0.7845, f1_weighted: 0.7813, precision_macro: 0.7916, precision_weighted: 0.7950, recall_macro: 0.7927, recall_weighted: 0.7841, f1_Bacterial_Blight: 0.7016, f1_Curl_Virus: 0.6989, f1_Healthy_Leaf: 0.7923, f1_Herbicide_Growth_Damage: 0.8866, f1_Leaf_Hopper_Jassids: 0.7382, f1_Leaf_Redding: 0.7578, f1_Leaf_Variegation: 0.9159
+2025-05-29 19:46:08 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:229] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth
+2025-05-29 19:46:08 - __main__ - INFO - [main_execution_logic:479] - E51: New best! Val f1_macro: 0.7845
+2025-05-29 19:46:08 - __main__ - INFO - [main_execution_logic:496] - Epoch 51 completed in 554.79s.
+2025-05-29 19:46:08 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E51 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 19:48:39 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E52 OptStep 50: Grad Norm: 4.1077
+2025-05-29 19:51:10 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E52 OptStep 100: Grad Norm: 4.5112
+2025-05-29 19:53:41 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E52 OptStep 150: Grad Norm: 3.9332
+2025-05-29 19:54:16 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 52 training finished. Avg Loss: 0.9937, Final LR: 8.26e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 19:55:18 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.9184, accuracy: 0.7717, f1_macro: 0.7702, f1_weighted: 0.7664, precision_macro: 0.7857, precision_weighted: 0.7860, recall_macro: 0.7782, recall_weighted: 0.7717, f1_Bacterial_Blight: 0.6984, f1_Curl_Virus: 0.6335, f1_Healthy_Leaf: 0.7711, f1_Herbicide_Growth_Damage: 0.8747, f1_Leaf_Hopper_Jassids: 0.7383, f1_Leaf_Redding: 0.7591, f1_Leaf_Variegation: 0.9162
+2025-05-29 19:55:18 - __main__ - INFO - [main_execution_logic:482] - E52: Val f1_macro (0.7702) not better. Patience: 1/25
+2025-05-29 19:55:18 - __main__ - INFO - [main_execution_logic:496] - Epoch 52 completed in 550.70s.
+2025-05-29 19:55:18 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E52 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 19:57:50 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E53 OptStep 50: Grad Norm: 3.6844
+2025-05-29 20:00:21 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E53 OptStep 100: Grad Norm: 3.6353
+2025-05-29 20:02:52 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E53 OptStep 150: Grad Norm: 3.8968
+2025-05-29 20:03:27 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 53 training finished. Avg Loss: 0.9813, Final LR: 8.17e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 20:04:29 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.8934, accuracy: 0.7848, f1_macro: 0.7845, f1_weighted: 0.7814, precision_macro: 0.7937, precision_weighted: 0.7949, recall_macro: 0.7912, recall_weighted: 0.7848, f1_Bacterial_Blight: 0.7068, f1_Curl_Virus: 0.6903, f1_Healthy_Leaf: 0.7932, f1_Herbicide_Growth_Damage: 0.8592, f1_Leaf_Hopper_Jassids: 0.7467, f1_Leaf_Redding: 0.7706, f1_Leaf_Variegation: 0.9245
+2025-05-29 20:04:29 - __main__ - INFO - [main_execution_logic:482] - E53: Val f1_macro (0.7845) not better. Patience: 2/25
+2025-05-29 20:04:29 - __main__ - INFO - [main_execution_logic:496] - Epoch 53 completed in 550.50s.
+2025-05-29 20:04:29 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E53 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 20:07:00 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E54 OptStep 50: Grad Norm: 4.1848
+2025-05-29 20:09:32 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E54 OptStep 100: Grad Norm: 4.3635
+2025-05-29 20:12:03 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E54 OptStep 150: Grad Norm: 4.1628
+2025-05-29 20:12:38 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 54 training finished. Avg Loss: 0.9864, Final LR: 8.08e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 20:13:40 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.8895, accuracy: 0.7958, f1_macro: 0.7952, f1_weighted: 0.7929, precision_macro: 0.8008, precision_weighted: 0.8026, recall_macro: 0.8013, recall_weighted: 0.7958, f1_Bacterial_Blight: 0.7202, f1_Curl_Virus: 0.7216, f1_Healthy_Leaf: 0.7966, f1_Herbicide_Growth_Damage: 0.8696, f1_Leaf_Hopper_Jassids: 0.7642, f1_Leaf_Redding: 0.7882, f1_Leaf_Variegation: 0.9059
+2025-05-29 20:13:43 - phase4_finetuning.finetune.trainer - INFO - [save_model_checkpoint:229] - Model checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth
+2025-05-29 20:13:43 - __main__ - INFO - [main_execution_logic:479] - E54: New best! Val f1_macro: 0.7952
+2025-05-29 20:13:43 - __main__ - INFO - [main_execution_logic:496] - Epoch 54 completed in 554.60s.
+2025-05-29 20:13:43 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E54 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 20:16:15 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E55 OptStep 50: Grad Norm: 3.9181
+2025-05-29 20:18:47 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E55 OptStep 100: Grad Norm: 3.6691
+2025-05-29 20:21:18 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E55 OptStep 150: Grad Norm: 5.4322
+2025-05-29 20:21:53 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 55 training finished. Avg Loss: 1.0079, Final LR: 7.99e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 20:22:55 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.8839, accuracy: 0.7856, f1_macro: 0.7847, f1_weighted: 0.7817, precision_macro: 0.7928, precision_weighted: 0.7930, recall_macro: 0.7911, recall_weighted: 0.7856, f1_Bacterial_Blight: 0.7078, f1_Curl_Virus: 0.6903, f1_Healthy_Leaf: 0.7975, f1_Herbicide_Growth_Damage: 0.8747, f1_Leaf_Hopper_Jassids: 0.7451, f1_Leaf_Redding: 0.7655, f1_Leaf_Variegation: 0.9118
+2025-05-29 20:22:55 - __main__ - INFO - [main_execution_logic:482] - E55: Val f1_macro (0.7847) not better. Patience: 1/25
+2025-05-29 20:22:55 - __main__ - INFO - [main_execution_logic:496] - Epoch 55 completed in 551.50s.
+2025-05-29 20:22:55 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E55 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 20:25:26 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E56 OptStep 50: Grad Norm: 3.8220
+2025-05-29 20:27:57 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E56 OptStep 100: Grad Norm: 4.0088
+2025-05-29 20:30:28 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E56 OptStep 150: Grad Norm: 4.4796
+2025-05-29 20:31:03 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 56 training finished. Avg Loss: 0.9770, Final LR: 7.89e-05, Opt Steps: 161, NaN count: 0
+2025-05-29 20:32:05 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:222] - Validation finished. Avg Loss: 0.8894, accuracy: 0.7907, f1_macro: 0.7900, f1_weighted: 0.7874, precision_macro: 0.7962, precision_weighted: 0.7980, recall_macro: 0.7970, recall_weighted: 0.7907, f1_Bacterial_Blight: 0.7056, f1_Curl_Virus: 0.7126, f1_Healthy_Leaf: 0.8060, f1_Herbicide_Growth_Damage: 0.8790, f1_Leaf_Hopper_Jassids: 0.7486, f1_Leaf_Redding: 0.7682, f1_Leaf_Variegation: 0.9101
+2025-05-29 20:32:05 - __main__ - INFO - [main_execution_logic:482] - E56: Val f1_macro (0.7900) not better. Patience: 2/25
+2025-05-29 20:32:05 - __main__ - INFO - [main_execution_logic:496] - Epoch 56 completed in 550.28s.
+2025-05-29 20:32:05 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E56 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 20:34:37 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E57 OptStep 50: Grad Norm: 5.3049
+2025-05-29 20:37:08 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E57 OptStep 100: Grad Norm: 4.5183
