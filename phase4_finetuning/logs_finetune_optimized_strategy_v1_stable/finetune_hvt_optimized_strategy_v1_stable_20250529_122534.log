@@ -393,3 +393,7 @@
 2025-05-29 17:27:57 - __main__ - INFO - [main_execution_logic:482] - E36: Val f1_macro (0.7238) not better. Patience: 1/25
 2025-05-29 17:27:57 - __main__ - INFO - [main_execution_logic:496] - Epoch 36 completed in 551.00s.
 2025-05-29 17:27:57 - __main__ - DEBUG - [main_execution_logic:497] - CUDA Mem E36 End: Alloc 4221.1MB, Reserved 6092.0MB
+2025-05-29 17:30:28 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E37 OptStep 50: Grad Norm: 3.9243
+2025-05-29 17:32:59 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E37 OptStep 100: Grad Norm: 3.4484
+2025-05-29 17:35:30 - phase4_finetuning.finetune.trainer - DEBUG - [train_one_epoch:128] - E37 OptStep 150: Grad Norm: 5.2088
+2025-05-29 17:36:05 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:154] - Epoch 37 training finished. Avg Loss: 1.0851, Final LR: 9.36e-05, Opt Steps: 161, NaN count: 0
