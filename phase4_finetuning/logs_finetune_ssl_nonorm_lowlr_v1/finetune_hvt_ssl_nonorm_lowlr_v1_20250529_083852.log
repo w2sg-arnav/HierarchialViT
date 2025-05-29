@@ -247,3 +247,8 @@
 2025-05-29 10:17:25 - __main__ - INFO - [main_execution_logic:465] - E31: New best! Val f1_macro: 0.6159
 2025-05-29 10:17:25 - __main__ - INFO - [main_execution_logic:478] - Epoch 31 completed in 238.85s.
 2025-05-29 10:17:25 - __main__ - DEBUG - [main_execution_logic:479] - CUDA Mem E31 End: Alloc 3161.3MB, Reserved 6628.0MB
+2025-05-29 10:21:03 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:114] - Epoch 32 training finished. Avg Loss: 1.2251, Final LR for epoch: 1.63e-05, Opt Steps: 228
+2025-05-29 10:21:20 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:182] - Validation finished. Avg Loss: 1.2481, accuracy: 0.6193, f1_macro: 0.6115, f1_weighted: 0.6076, precision_macro: 0.6626, precision_weighted: 0.6684, recall_macro: 0.6289, recall_weighted: 0.6193, f1_Bacterial_Blight: 0.5326, f1_Curl_Virus: 0.3770, f1_Healthy_Leaf: 0.5653, f1_Herbicide_Growth_Damage: 0.8167, f1_Leaf_Hopper_Jassids: 0.5058, f1_Leaf_Redding: 0.6705, f1_Leaf_Variegation: 0.8124
+2025-05-29 10:21:20 - __main__ - INFO - [main_execution_logic:469] - E32: Val f1_macro (0.6115) not better than best (0.6159). Patience: 1/15
+2025-05-29 10:21:20 - __main__ - INFO - [main_execution_logic:478] - Epoch 32 completed in 235.06s.
+2025-05-29 10:21:20 - __main__ - DEBUG - [main_execution_logic:479] - CUDA Mem E32 End: Alloc 3161.3MB, Reserved 6628.0MB
