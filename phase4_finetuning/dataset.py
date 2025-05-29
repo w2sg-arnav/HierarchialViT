@@ -17,7 +17,8 @@ except ImportError:
     print("Warning (phase4_dataset.py): Could not import global_finetune_config_defaults. Using hardcoded dataset defaults.")
     global_finetune_config_defaults = {
         "seed": 42, "original_dataset_name": "Original Dataset",
-        "augmented_dataset_name": "Augmented Dataset", "num_classes": 7
+        "augmented_dataset_name": "Augmented Dataset", "num_classes": 7,
+        "normalize_data": True # Defaulting to True as per optimization guide
     }
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,8 @@ logger = logging.getLogger(__name__)
 class SARCLD2024Dataset(Dataset):
     def __init__(self,
                  root_dir: str,
-                 img_size: tuple, 
-                 split: str = "train", 
+                 img_size: tuple,
+                 split: str = "train",
                  train_split_ratio: float = 0.8,
                  normalize_for_model: bool = True, # Will be set by config['normalize_data']
                  original_dataset_name: Optional[str] = None,
@@ -44,7 +45,7 @@ class SARCLD2024Dataset(Dataset):
         self.random_seed = random_seed if random_seed is not None else global_finetune_config_defaults.get('seed')
 
         self.classes = ["Bacterial Blight", "Curl Virus", "Healthy Leaf", "Herbicide Growth Damage", "Leaf Hopper Jassids", "Leaf Redding", "Leaf Variegation"]
-        self.num_classes = len(self.classes) 
+        self.num_classes = len(self.classes)
         self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
 
         self.image_paths: List[str] = []
@@ -56,14 +57,13 @@ class SARCLD2024Dataset(Dataset):
             raise FileNotFoundError(f"Dataset root missing: {self.root_dir}")
 
         items_scanned_count = 0
-        # Use provided names or default from global config if None
         dataset_names_to_scan = [
-            self.original_dataset_name, 
+            self.original_dataset_name,
             self.augmented_dataset_name
         ]
 
         for dataset_type_name in dataset_names_to_scan:
-            if not dataset_type_name: 
+            if not dataset_type_name:
                 logger.debug(f"[DATASET INIT - {self.split}] Dataset name '{dataset_type_name}' is None/empty, skipping.")
                 continue
             dataset_path = self.root_dir / dataset_type_name
@@ -82,7 +82,7 @@ class SARCLD2024Dataset(Dataset):
                         items_scanned_count += 1
                         if item.is_file() and item.suffix.lower() in valid_extensions:
                             try:
-                                if os.path.getsize(item) > 0: 
+                                if os.path.getsize(item) > 0:
                                     self.image_paths.append(str(item))
                                     self.labels.append(self.class_to_idx[class_name])
                                 else:
@@ -112,17 +112,17 @@ class SARCLD2024Dataset(Dataset):
         if self.split == "train": self.current_indices = indices[:split_idx]
         elif self.split in ["val", "validation", "test"]: self.current_indices = indices[split_idx:]
         else: logger.error(f"Invalid split name '{self.split}'."); raise ValueError(f"Invalid split name '{self.split}'")
-        
+
         self.current_split_labels = self.labels_np[self.current_indices]
         logger.info(f"[DATASET INIT - {self.split}] Dataset split size: {len(self.current_indices)} samples.")
         self.class_weights_computed = None
 
         transforms_list = [
-            T_v2.ToImage(),
+            T_v2.ToImage(), # Converts PIL to Tensor
             T_v2.ToDtype(torch.float32, scale=True), # scale=True ensures [0,1] range from uint8 PIL
             T_v2.Resize(self.img_size, interpolation=T_v2.InterpolationMode.BICUBIC, antialias=True),
         ]
-        if self.normalize: # This will be False based on the new config, so Normalize won't be added
+        if self.normalize: # This will be True based on the new config.
              transforms_list.append(T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]))
         self.base_transform = T_v2.Compose(transforms_list)
         logger.info(f"[DATASET INIT - {self.split}] Base RGB Transforms: {self.base_transform}")
@@ -138,18 +138,29 @@ class SARCLD2024Dataset(Dataset):
         actual_idx_in_full_list = self.current_indices[idx]
         img_path = self.image_paths_np[actual_idx_in_full_list]
         label = self.labels_np[actual_idx_in_full_list]
-        
+
         try:
             img = Image.open(img_path).convert("RGB")
-        except Exception as e:
+        except Exception as e: # More general exception catch
             logger.error(f"Error loading image {img_path} (idx {idx}, actual_idx {actual_idx_in_full_list}): {e}. Returning dummy.")
-            dummy_tensor = torch.zeros((3, self.img_size[0], self.img_size[1]), dtype=torch.float32)
+            # Create dummy tensor *before* potential normalization in base_transform
+            dummy_pil_like_tensor = torch.zeros((3, self.img_size[0], self.img_size[1]), dtype=torch.uint8)
+            # If ToImage and ToDtype were part of base_transform, they'd handle this.
+            # Here, we simulate their output for the dummy.
+            # ToImage() -> tensor, ToDtype(float32, scale=True) -> [0,1] float
+            # Then Resize and Normalize are applied.
+            # For simplicity in dummy creation, if base_transform is applied, it handles it.
+            # If we create a raw tensor and apply base_transform, it must be compatible.
+            # Let's create a float tensor [0,1] and then apply a simplified base transform that only normalizes if needed.
+            dummy_tensor = torch.zeros((3, self.img_size[0], self.img_size[1]), dtype=torch.float32) # Already [0,0] so in [0,1]
             if self.normalize: # Apply normalization to dummy if it would have been applied
                 normalizer = T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
                 dummy_tensor = normalizer(dummy_tensor)
             return dummy_tensor, torch.tensor(-1, dtype=torch.long)
 
+
         try:
+            # Base transform now expects PIL, converts to tensor, scales to [0,1], resizes, and normalizes
             rgb_tensor = self.base_transform(img)
         except Exception as e_transform:
             logger.error(f"Error transforming image {img_path}: {e_transform}. Returning dummy.", exc_info=True)
@@ -171,15 +182,15 @@ class SARCLD2024Dataset(Dataset):
                 logger.warning(f"Cannot compute class weights: split '{self.split}' has no labels.")
                 return None
             class_counts = Counter(self.current_split_labels)
-            
-            weights = torch.ones(self.num_classes, dtype=torch.float) 
+
+            weights = torch.ones(self.num_classes, dtype=torch.float)
             for i in range(self.num_classes):
                 count = class_counts.get(i, 0)
                 if count > 0:
                     # Standard inverse frequency weighting
                     weights[i] = len(self.current_split_labels) / (self.num_classes * count)
-                else: # If a class is not in the current split (can happen with small val sets)
-                    weights[i] = 1.0 # Assign a default weight, or handle as error/warning
+                else: # If a class is not in the current split
+                    weights[i] = 1.0 # Assign a default weight
                     logger.debug(f"Class '{self.classes[i]}' (idx {i}) not found in split '{self.split}' for weight calculation. Weight set to 1.0.")
             self.class_weights_computed = weights
             logger.info(f"Computed class weights (inv_freq for loss) for split '{self.split}': {self.class_weights_computed.numpy().round(3)}")

@@ -26,7 +26,11 @@ class Finetuner:
                  clip_grad_norm: Optional[float] = None,
                  augmentations = None,
                  num_classes: int = 7,
-                 tta_enabled_val: bool = False 
+                 tta_enabled_val: bool = False,
+                 debug_nan_detection: bool = False, # New
+                 stop_on_nan_threshold: int = 5,   # New
+                 monitor_gradients: bool = False,    # New
+                 gradient_log_interval: int = 50   # New
                  ):
         self.model = model.to(device)
         self.optimizer = optimizer
@@ -41,19 +45,27 @@ class Finetuner:
         self.num_classes = num_classes
         self.tta_enabled_val = tta_enabled_val
 
-        logger.info(f"Finetuner initialized: device={device}, accum_steps={self.accumulation_steps}, lr_sched_on_batch={self.lr_scheduler_on_batch}, AMP={self.scaler.is_enabled()}")
-        if self.augmentations:
-            logger.info(f"Using training augmentations: {self.augmentations.__class__.__name__}")
-        if self.tta_enabled_val:
-            logger.info("Test-Time Augmentation (TTA) enabled for validation.")
+        self.debug_nan_detection = debug_nan_detection
+        self.stop_on_nan_threshold = stop_on_nan_threshold
+        self.nan_loss_counter_epoch = 0
+        self.monitor_gradients = monitor_gradients
+        self.gradient_log_interval = gradient_log_interval
+
+        logger.info(f"Finetuner initialized: device={device}, accum_steps={self.accumulation_steps}, AMP={self.scaler.is_enabled()}")
+        if self.augmentations: logger.info(f"Using training augmentations: {self.augmentations.__class__.__name__}")
+        if self.tta_enabled_val: logger.info("Test-Time Augmentation (TTA) enabled for validation.")
+        if self.debug_nan_detection: logger.info(f"NaN detection enabled. Stop threshold: {self.stop_on_nan_threshold} NaNs/epoch.")
+        if self.monitor_gradients: logger.info(f"Gradient monitoring enabled. Log interval: {self.gradient_log_interval} optimizer steps.")
 
 
-    def train_one_epoch(self, train_loader: torch.utils.data.DataLoader, current_epoch: int, total_epochs: int) -> float:
+    def train_one_epoch(self, train_loader: torch.utils.data.DataLoader, current_epoch: int, total_epochs: int) -> Tuple[float, bool]:
         self.model.train()
         total_loss = 0.0
         actual_optimizer_steps = 0
         processed_batches_for_avg_loss = 0
         self.optimizer.zero_grad(set_to_none=True)
+        self.nan_loss_counter_epoch = 0 # Reset for the new epoch
+        nan_threshold_exceeded_this_epoch = False
 
         pbar = tqdm(enumerate(train_loader), total=len(train_loader),
                     desc=f"Epoch {current_epoch}/{total_epochs} [Fine-tuning]", file=sys.stdout, dynamic_ncols=True)
@@ -63,8 +75,14 @@ class Finetuner:
             labels = labels.to(self.device, non_blocking=(self.device == 'cuda'))
 
             if self.augmentations:
-                # Images are now [0,1] float from dataset, augmentations applied here
                 rgb_images = self.augmentations(rgb_images)
+                if not torch.isfinite(rgb_images).all(): # Check after augmentation
+                    logger.error(f"E{current_epoch} B{batch_idx}: Non-finite values in augmented images. Skipping batch.")
+                    self.nan_loss_counter_epoch +=1 # Count this as a NaN-related issue
+                    if self.debug_nan_detection and self.nan_loss_counter_epoch >= self.stop_on_nan_threshold:
+                        nan_threshold_exceeded_this_epoch = True; break
+                    continue
+
 
             loss_value_this_iteration = 0.0
             try:
@@ -72,30 +90,46 @@ class Finetuner:
                     outputs = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
                     if isinstance(outputs, tuple) and len(outputs) > 0: 
                         outputs = outputs[0]
-
                     loss = self.criterion(outputs, labels)
-                    loss_value_this_iteration = loss.item()
+                    loss_value_this_iteration = loss.item() # Store pre-accumulation loss
                     if self.accumulation_steps > 1:
                         loss = loss / self.accumulation_steps
             except Exception as e_fwd:
                 logger.error(f"E{current_epoch} B{batch_idx}: Forward/loss error: {e_fwd}", exc_info=True)
                 if self.accumulation_steps > 1 and (batch_idx +1) % self.accumulation_steps != 0 :
-                    self.optimizer.zero_grad(set_to_none=True)
-                continue 
+                    self.optimizer.zero_grad(set_to_none=True) # Clear any partial grads
+                self.nan_loss_counter_epoch +=1
+                if self.debug_nan_detection and self.nan_loss_counter_epoch >= self.stop_on_nan_threshold:
+                    nan_threshold_exceeded_this_epoch = True; break
+                continue
 
             if not torch.isfinite(loss):
                 logger.error(f"E{current_epoch} B{batch_idx}: Non-finite loss ({loss.item()}). Skipping grad.")
                 if self.accumulation_steps > 1 and (batch_idx +1) % self.accumulation_steps != 0 :
                     self.optimizer.zero_grad(set_to_none=True)
+                self.nan_loss_counter_epoch +=1
+                if self.debug_nan_detection and self.nan_loss_counter_epoch >= self.stop_on_nan_threshold:
+                    nan_threshold_exceeded_this_epoch = True; break
                 continue
 
             self.scaler.scale(loss).backward()
 
             if (batch_idx + 1) % self.accumulation_steps == 0:
                 actual_optimizer_steps +=1
+                self.scaler.unscale_(self.optimizer) # Unscale before clipping or monitoring
+
+                if self.monitor_gradients and actual_optimizer_steps % self.gradient_log_interval == 0:
+                    total_norm = 0.0
+                    for p in self.model.parameters():
+                        if p.grad is not None:
+                            param_norm = p.grad.data.norm(2)
+                            total_norm += param_norm.item() ** 2
+                    total_norm = total_norm ** 0.5
+                    logger.debug(f"E{current_epoch} OptStep {actual_optimizer_steps}: Grad Norm: {total_norm:.4f}")
+
                 if self.clip_grad_norm is not None:
-                    self.scaler.unscale_(self.optimizer) 
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip_grad_norm)
+                
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad(set_to_none=True) 
@@ -103,16 +137,22 @@ class Finetuner:
                 if self.scheduler and self.lr_scheduler_on_batch:
                     self.scheduler.step()
 
-            total_loss += loss_value_this_iteration
+            total_loss += loss_value_this_iteration # Accumulate pre-scaled loss for avg
             processed_batches_for_avg_loss += 1
             current_lr = self.optimizer.param_groups[0]['lr'] 
-            pbar.set_postfix({"Loss": f"{loss_value_this_iteration:.4f}", "LR": f"{current_lr:.2e}"})
+            pbar.set_postfix({"Loss": f"{loss_value_this_iteration:.4f}", "LR": f"{current_lr:.2e}", "NaNs": self.nan_loss_counter_epoch})
+            
+            if nan_threshold_exceeded_this_epoch: break # Exit outer loop if NaN threshold hit
 
         pbar.close()
-        avg_epoch_loss = total_loss / processed_batches_for_avg_loss if processed_batches_for_avg_loss > 0 else 0.0
+        if nan_threshold_exceeded_this_epoch:
+            logger.error(f"Epoch {current_epoch} terminated early due to exceeding NaN loss threshold ({self.stop_on_nan_threshold}).")
+            return 0.0, True # Return 0 loss and True for NaN exceeded
+
+        avg_epoch_loss = total_loss / processed_batches_for_avg_loss if processed_batches_for_avg_loss > 0 else float('nan')
         final_lr_epoch = self.optimizer.param_groups[0]['lr']
-        logger.info(f"Epoch {current_epoch} training finished. Avg Loss: {avg_epoch_loss:.4f}, Final LR for epoch: {final_lr_epoch:.2e}, Opt Steps: {actual_optimizer_steps}")
-        return avg_epoch_loss
+        logger.info(f"Epoch {current_epoch} training finished. Avg Loss: {avg_epoch_loss:.4f}, Final LR: {final_lr_epoch:.2e}, Opt Steps: {actual_optimizer_steps}, NaN count: {self.nan_loss_counter_epoch}")
+        return avg_epoch_loss, False # Return avg loss and False for NaN exceeded
 
     def validate_one_epoch(self, val_loader: torch.utils.data.DataLoader, class_names: Optional[List[str]] = None) -> Tuple[float, Dict[str, float]]:
         self.model.eval()
@@ -120,8 +160,10 @@ class Finetuner:
         all_final_outputs_list: List[torch.Tensor] = [] 
         all_labels_list: List[torch.Tensor] = []
         
-        num_val_batches = len(val_loader)
-        if num_val_batches == 0:
+        num_val_batches_initial = len(val_loader)
+        num_valid_batches_for_loss_avg = num_val_batches_initial
+
+        if num_val_batches_initial == 0:
             logger.warning("Validation loader is empty. Returning zero metrics.")
             metrics = {"val_loss": 0.0, "accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0, 
                        "precision_macro":0.0, "precision_weighted": 0.0, "recall_macro":0.0, "recall_weighted":0.0}
@@ -135,17 +177,14 @@ class Finetuner:
                 rgb_images = rgb_images.to(self.device, non_blocking=(self.device == 'cuda'))
                 labels = labels.to(self.device, non_blocking=(self.device == 'cuda'))
 
-                with autocast(enabled=self.scaler.is_enabled()):
+                with autocast(enabled=self.scaler.is_enabled()): # AMP for validation if enabled
                     if self.tta_enabled_val:
                         outputs_original = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
                         if isinstance(outputs_original, tuple): outputs_original = outputs_original[0]
-
                         outputs_hflip = self.model(rgb_img=T_v2.functional.horizontal_flip(rgb_images), spectral_img=None, mode='classify')
                         if isinstance(outputs_hflip, tuple): outputs_hflip = outputs_hflip[0]
-                        
                         outputs_vflip = self.model(rgb_img=T_v2.functional.vertical_flip(rgb_images), spectral_img=None, mode='classify')
                         if isinstance(outputs_vflip, tuple): outputs_vflip = outputs_vflip[0]
-
                         final_outputs = (outputs_original + outputs_hflip + outputs_vflip) / 3.0
                     else:
                         final_outputs = self.model(rgb_img=rgb_images, spectral_img=None, mode='classify')
@@ -155,18 +194,19 @@ class Finetuner:
 
                 if not torch.isfinite(loss):
                      logger.warning(f"Non-finite validation loss detected ({loss.item()}). Skipping this batch for loss avg.")
-                     num_val_batches = max(1, num_val_batches - 1)
-                     continue
+                     num_valid_batches_for_loss_avg = max(1, num_valid_batches_for_loss_avg - 1) # Avoid DivByZero
+                     continue # Don't add loss, preds, or labels for this batch
 
                 total_val_loss += loss.item()
                 all_final_outputs_list.append(final_outputs.cpu()) 
                 all_labels_list.append(labels.cpu())
+        pbar_val.close()
 
-        avg_val_loss = total_val_loss / num_val_batches if num_val_batches > 0 else 0.0
+        avg_val_loss = total_val_loss / num_valid_batches_for_loss_avg if num_valid_batches_for_loss_avg > 0 else float('nan')
         metrics: Dict[str, float] = {"val_loss": avg_val_loss}
 
         if not all_final_outputs_list:
-             logger.warning("Validation yielded no outputs. Returning zero metrics beyond val_loss.")
+             logger.warning("Validation yielded no valid outputs. Returning zero metrics beyond val_loss.")
              metrics.update({"accuracy": 0.0, "f1_macro": 0.0, "f1_weighted": 0.0, "precision_macro":0.0, "recall_macro":0.0})
         else:
             all_logits_stacked = torch.cat(all_final_outputs_list)
