@@ -1,0 +1,86 @@
+2025-05-30 09:13:16 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/finetune_hvt_optimized_strategy_v1_stable_resumed_20250530_091316.log. Logger 'root' Effective Level: INFO
+2025-05-30 09:13:16 - __main__ - INFO - [main_execution_logic:301] - ======== Starting Phase 4: HVT Fine-tuning (Run ID: 20250530_091316) ========
+2025-05-30 09:13:16 - __main__ - INFO - [main_execution_logic:302] - Full run configuration loaded. Log dir: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed
+2025-05-30 09:13:16 - __main__ - WARNING - [main_execution_logic:304] - Detailed debugging (NaNs, Gradients) is ON. Log level might be verbose.
+2025-05-30 09:13:16 - __main__ - INFO - [set_global_seed:68] - Global random seed set to: 42
+2025-05-30 09:13:16 - __main__ - INFO - [main_execution_logic:311] - Using device: cuda. GPU: Tesla T4
+2025-05-30 09:13:16 - __main__ - INFO - [main_execution_logic:314] - Set matmul_precision to high
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:54] - [DATASET INIT - train] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (448, 448), Normalize: True
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Augmented Dataset
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:105] - [DATASET INIT - train] Total valid image paths collected: 9137 from ~9137 items considered.
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:117] - [DATASET INIT - train] Dataset split size: 7766 samples.
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:128] - [DATASET INIT - train] Base RGB Transforms: Compose(
+      ToImage()
+      ToDtype(scale=True)
+      Resize(size=[448, 448], interpolation=InterpolationMode.BICUBIC, antialias=True)
+      Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=False)
+)
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:54] - [DATASET INIT - val] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (448, 448), Normalize: True
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-05-30 09:13:16 - phase4_finetuning.dataset - INFO - [__init__:74] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Augmented Dataset
+2025-05-30 09:13:17 - phase4_finetuning.dataset - INFO - [__init__:105] - [DATASET INIT - val] Total valid image paths collected: 9137 from ~9137 items considered.
+2025-05-30 09:13:17 - phase4_finetuning.dataset - INFO - [__init__:117] - [DATASET INIT - val] Dataset split size: 1371 samples.
+2025-05-30 09:13:17 - phase4_finetuning.dataset - INFO - [__init__:128] - [DATASET INIT - val] Base RGB Transforms: Compose(
+      ToImage()
+      ToDtype(scale=True)
+      Resize(size=[448, 448], interpolation=InterpolationMode.BICUBIC, antialias=True)
+      Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], inplace=False)
+)
+2025-05-30 09:13:17 - __main__ - INFO - [main_execution_logic:325] - Datasets loaded. Train samples: 7766, Val samples: 1371. Classes: ['Bacterial Blight', 'Curl Virus', 'Healthy Leaf', 'Herbicide Growth Damage', 'Leaf Hopper Jassids', 'Leaf Redding', 'Leaf Variegation']
+2025-05-30 09:13:17 - __main__ - INFO - [main_execution_logic:340] - Using WeightedRandomSampler with 'sqrt_inv_count' mode. Per-class weights: [0.031 0.029 0.031 0.03  0.031 0.027 0.032]
+2025-05-30 09:13:17 - __main__ - INFO - [main_execution_logic:351] - WeightedRandomSampler enabled (mode: sqrt_inv_count).
+2025-05-30 09:13:17 - __main__ - INFO - [main_execution_logic:358] - Dataloaders created. Train batches: 970, Val batches: 172
+2025-05-30 09:13:17 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (448, 448), num_classes: 7
+2025-05-30 09:13:20 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-05-30 09:13:23 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-05-30 09:13:23 - __main__ - INFO - [main_execution_logic:366] - Attempting to load finetuning checkpoint from: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:379] - Checkpoint appears to be a model state_dict (old format). Loading model weights.
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:385] - Model state loaded from old format finetuning checkpoint. SSL backbone loading will be skipped.
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:401] - Model ready. Total params: 273,615,751, Trainable params: 273,615,751
+2025-05-30 09:13:24 - phase4_finetuning.utils.augmentations - INFO - [create_augmentation:268] - Creating augmentation strategy: 'stable_enhanced' with img_size: (448, 448), kwargs: {'severity': 'moderate'}
+2025-05-30 09:13:24 - phase4_finetuning.utils.augmentations - INFO - [__init__:124] - StableEnhancedFinetuneAugmentation initialized with 'moderate' severity for stability.
+2025-05-30 09:13:24 - phase4_finetuning.dataset - INFO - [get_class_weights:196] - Computed class weights (inv_freq for loss) for split 'train': [1.034 0.905 1.061 1.02  1.065 0.829 1.164]
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:421] - Using weighted CrossEntropyLoss. Weights: [1.034 0.905 1.061 1.02  1.065 0.829 1.164]
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:451] - Optimizer: AdamW created with overall defaults: {'lr': 0.0001, 'betas': (0.9, 0.999), 'eps': 1e-07, 'weight_decay': 0.05, 'amsgrad': False, 'foreach': None, 'maximize': False, 'capturable': False, 'differentiable': False, 'fused': None}
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:454] -   Group 'head': Initial LR 1.00e-04, WD 5.00e-02
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:454] -   Group 'backbone': Initial LR 1.00e-05, WD 5.00e-02
+2025-05-30 09:13:24 - __main__ - INFO - [main_execution_logic:472] - Scheduler: WarmupCosine (per-step). WU Steps: 2415, Total Steps: 32200
+2025-05-30 09:13:24 - phase4_finetuning.finetune.trainer - INFO - [__init__:59] - Finetuner initialized: device=cuda, accum_steps=6, AMP=False
+2025-05-30 09:13:24 - phase4_finetuning.finetune.trainer - INFO - [__init__:60] - Using training augmentations: StableEnhancedFinetuneAugmentation
+2025-05-30 09:13:24 - phase4_finetuning.finetune.trainer - INFO - [__init__:61] - Test-Time Augmentation (TTA) enabled for validation.
+2025-05-30 09:13:24 - phase4_finetuning.finetune.trainer - INFO - [__init__:62] - NaN detection enabled. Stop threshold: 5 NaNs/epoch.
+2025-05-30 09:13:24 - phase4_finetuning.finetune.trainer - INFO - [__init__:63] - Gradient monitoring enabled. Log interval: 50 optimizer steps.
+2025-05-30 09:13:25 - __main__ - WARNING - [main_execution_logic:520] - Finetune checkpoint /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth was old format (model weights only). Optimizer, scheduler, and epoch not resumed. Starting fresh for these.
+2025-05-30 09:13:25 - __main__ - INFO - [main_execution_logic:562] - Checkpoints will be saved in: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/checkpoints_optimized_strategy_v1_stable_resumed
+2025-05-30 09:13:25 - __main__ - INFO - [main_execution_logic:564] - Starting fine-tuning from epoch 1 up to 200 epochs. Monitor: 'f1_macro'. Initial Best: 0.0000
+2025-05-30 09:15:39 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:162] - Epoch 1 training finished. Avg Loss: 0.9845, Final LR: 6.67e-06, Opt Steps: 161, NaN count: 0
+2025-05-30 09:16:41 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:237] - Validation finished. Avg Loss: 0.8169, accuracy: 0.8177, f1_macro: 0.8176, f1_weighted: 0.8153, precision_macro: 0.8194, precision_weighted: 0.8185, recall_macro: 0.8212, recall_weighted: 0.8177, f1_Bacterial_Blight: 0.7227, f1_Curl_Virus: 0.7432, f1_Healthy_Leaf: 0.8308, f1_Herbicide_Growth_Damage: 0.9132, f1_Leaf_Hopper_Jassids: 0.7889, f1_Leaf_Redding: 0.7966, f1_Leaf_Variegation: 0.9281
+2025-05-30 09:16:45 - phase4_finetuning.finetune.trainer - INFO - [save_checkpoint:260] - Checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/checkpoints_optimized_strategy_v1_stable_resumed/best_finetuned_hvt_optimized_strategy_v1_stable_resumed.pth (Epoch 1, Best f1_macro: 0.8176)
+2025-05-30 09:16:45 - __main__ - INFO - [main_execution_logic:655] - E1: New best! Val f1_macro: 0.8176
+2025-05-30 09:16:45 - __main__ - INFO - [main_execution_logic:679] - Epoch 1 completed in 199.45s.
+2025-05-30 09:18:56 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:162] - Epoch 2 training finished. Avg Loss: 0.9764, Final LR: 1.33e-05, Opt Steps: 161, NaN count: 0
+2025-05-30 09:19:58 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:237] - Validation finished. Avg Loss: 0.8233, accuracy: 0.8184, f1_macro: 0.8183, f1_weighted: 0.8162, precision_macro: 0.8207, precision_weighted: 0.8205, recall_macro: 0.8220, recall_weighted: 0.8184, f1_Bacterial_Blight: 0.7131, f1_Curl_Virus: 0.7547, f1_Healthy_Leaf: 0.8251, f1_Herbicide_Growth_Damage: 0.9132, f1_Leaf_Hopper_Jassids: 0.7955, f1_Leaf_Redding: 0.8009, f1_Leaf_Variegation: 0.9258
+2025-05-30 09:20:03 - phase4_finetuning.finetune.trainer - INFO - [save_checkpoint:260] - Checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/checkpoints_optimized_strategy_v1_stable_resumed/best_finetuned_hvt_optimized_strategy_v1_stable_resumed.pth (Epoch 2, Best f1_macro: 0.8183)
+2025-05-30 09:20:03 - __main__ - INFO - [main_execution_logic:655] - E2: New best! Val f1_macro: 0.8183
+2025-05-30 09:20:03 - __main__ - INFO - [main_execution_logic:679] - Epoch 2 completed in 197.89s.
+2025-05-30 09:22:15 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:162] - Epoch 3 training finished. Avg Loss: 0.9785, Final LR: 2.00e-05, Opt Steps: 161, NaN count: 0
+2025-05-30 09:23:17 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:237] - Validation finished. Avg Loss: 0.8246, accuracy: 0.8191, f1_macro: 0.8191, f1_weighted: 0.8171, precision_macro: 0.8205, precision_weighted: 0.8209, recall_macro: 0.8233, recall_weighted: 0.8191, f1_Bacterial_Blight: 0.7151, f1_Curl_Virus: 0.7660, f1_Healthy_Leaf: 0.8279, f1_Herbicide_Growth_Damage: 0.9109, f1_Leaf_Hopper_Jassids: 0.7911, f1_Leaf_Redding: 0.7973, f1_Leaf_Variegation: 0.9258
+2025-05-30 09:23:21 - phase4_finetuning.finetune.trainer - INFO - [save_checkpoint:260] - Checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/checkpoints_optimized_strategy_v1_stable_resumed/best_finetuned_hvt_optimized_strategy_v1_stable_resumed.pth (Epoch 3, Best f1_macro: 0.8191)
+2025-05-30 09:23:21 - __main__ - INFO - [main_execution_logic:655] - E3: New best! Val f1_macro: 0.8191
+2025-05-30 09:23:21 - __main__ - INFO - [main_execution_logic:679] - Epoch 3 completed in 198.04s.
+2025-05-30 09:25:32 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:162] - Epoch 4 training finished. Avg Loss: 0.9709, Final LR: 2.67e-05, Opt Steps: 161, NaN count: 0
+2025-05-30 09:26:34 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:237] - Validation finished. Avg Loss: 0.8237, accuracy: 0.8155, f1_macro: 0.8157, f1_weighted: 0.8135, precision_macro: 0.8165, precision_weighted: 0.8170, recall_macro: 0.8202, recall_weighted: 0.8155, f1_Bacterial_Blight: 0.7182, f1_Curl_Virus: 0.7553, f1_Healthy_Leaf: 0.8186, f1_Herbicide_Growth_Damage: 0.9064, f1_Leaf_Hopper_Jassids: 0.7911, f1_Leaf_Redding: 0.7973, f1_Leaf_Variegation: 0.9231
+2025-05-30 09:26:34 - __main__ - INFO - [main_execution_logic:658] - E4: Val f1_macro (0.8157) not better. Patience: 1/30
+2025-05-30 09:26:34 - __main__ - INFO - [main_execution_logic:679] - Epoch 4 completed in 193.59s.
+2025-05-30 09:28:46 - phase4_finetuning.finetune.trainer - INFO - [train_one_epoch:162] - Epoch 5 training finished. Avg Loss: 0.9845, Final LR: 3.33e-05, Opt Steps: 161, NaN count: 0
+2025-05-30 09:29:48 - phase4_finetuning.finetune.trainer - INFO - [validate_one_epoch:237] - Validation finished. Avg Loss: 0.8246, accuracy: 0.8191, f1_macro: 0.8195, f1_weighted: 0.8172, precision_macro: 0.8204, precision_weighted: 0.8210, recall_macro: 0.8240, recall_weighted: 0.8191, f1_Bacterial_Blight: 0.7222, f1_Curl_Virus: 0.7634, f1_Healthy_Leaf: 0.8230, f1_Herbicide_Growth_Damage: 0.9109, f1_Leaf_Hopper_Jassids: 0.7935, f1_Leaf_Redding: 0.7973, f1_Leaf_Variegation: 0.9258
+2025-05-30 09:29:51 - phase4_finetuning.finetune.trainer - INFO - [save_checkpoint:260] - Checkpoint saved to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable_resumed/checkpoints_optimized_strategy_v1_stable_resumed/best_finetuned_hvt_optimized_strategy_v1_stable_resumed.pth (Epoch 5, Best f1_macro: 0.8195)
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:655] - E5: New best! Val f1_macro: 0.8195
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:679] - Epoch 5 completed in 196.58s.
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:600] - Epoch 6: Backbone UNPROZEN. Updating LRs for unfrozen phase.
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:612] -   Updating optimizer group 'head' LR to 1.00e-04
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:612] -   Updating optimizer group 'backbone' LR to 1.00e-05
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:623] -   Effective LRs after unfreezing update:
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:625] -     Opt Group 0 ('head'): LR 1.000e-04, Scheduler base 1.000e-04
+2025-05-30 09:29:51 - __main__ - INFO - [main_execution_logic:625] -     Opt Group 1 ('backbone'): LR 1.000e-05, Scheduler base 1.000e-05

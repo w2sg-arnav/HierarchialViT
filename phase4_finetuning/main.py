@@ -23,7 +23,7 @@ logger: Optional[logging.Logger] = None
 try:
     from .config import config as base_finetune_config
     from .dataset import SARCLD2024Dataset
-    from .utils.augmentations import create_augmentation # UPDATED IMPORT
+    from .utils.augmentations import create_augmentation
     from .utils.logging_setup import setup_logging
     from .finetune.trainer import Finetuner
     from phase2_model.models.hvt import DiseaseAwareHVT, create_disease_aware_hvt
@@ -38,7 +38,7 @@ def get_cosine_schedule_with_warmup_step(optimizer: torch.optim.Optimizer, num_w
     def lr_lambda(current_step: int):
         if current_step < num_warmup_steps: return float(current_step) / float(max(1, num_warmup_steps))
         eff_training_steps = num_training_steps - num_warmup_steps
-        if eff_training_steps <=0: return 0.0
+        if eff_training_steps <=0: return 1.0 # If no training steps after warmup, maintain max LR
         progress = float(current_step - num_warmup_steps) / float(max(1, eff_training_steps))
         return max(0.0, 0.5 * (1.0 + math.cos(math.pi * float(num_cycles) * 2.0 * progress)))
     return LambdaLR(optimizer, lr_lambda, last_epoch)
@@ -63,6 +63,8 @@ def parse_arguments() -> argparse.Namespace:
 def set_global_seed(seed_value: int):
     torch.manual_seed(seed_value); np.random.seed(seed_value)
     if torch.cuda.is_available(): torch.cuda.manual_seed_all(seed_value)
+    # torch.use_deterministic_algorithms(True) # For full determinism, but can impact performance
+    # os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8" 
     if logger: logger.info(f"Global random seed set to: {seed_value}")
     else: print(f"Global random seed set to: {seed_value} (logger not yet init)")
 
@@ -71,16 +73,41 @@ def _interpolate_positional_embedding(
     hvt_patch_size: int, target_img_size_for_finetune: Tuple[int, int],
     ssl_img_size_for_pos_embed: Tuple[int, int]) -> Tuple[torch.Tensor, bool]:
     _local_logger_pe = logging.getLogger(f"{__name__}._interpolate_pe")
-    if checkpoint_pos_embed.ndim == 2: checkpoint_pos_embed = checkpoint_pos_embed.unsqueeze(0)
+    if checkpoint_pos_embed.ndim == 2: checkpoint_pos_embed = checkpoint_pos_embed.unsqueeze(0) # B, N, C
+    elif checkpoint_pos_embed.ndim == 1: 
+        _local_logger_pe.warning("PE Interp: Checkpoint PE is 1D. This is unusual. Assuming it's (N*C) and trying to infer N if C matches.")
+        if model_pos_embed_param.ndim == 3 and model_pos_embed_param.shape[0] == 1: # (1, N_model, C_model)
+            C_model = model_pos_embed_param.shape[2]
+            if checkpoint_pos_embed.shape[0] % C_model == 0:
+                N_ckpt_inferred = checkpoint_pos_embed.shape[0] // C_model
+                checkpoint_pos_embed = checkpoint_pos_embed.view(1, N_ckpt_inferred, C_model)
+                _local_logger_pe.info(f"PE Interp: Reshaped 1D PE to {checkpoint_pos_embed.shape}")
+            else:
+                 _local_logger_pe.error(f"PE Interp: Cannot reshape 1D PE. No interp."); return model_pos_embed_param.data, False
+        else:
+            _local_logger_pe.error(f"PE Interp: Cannot handle 1D PE with model PE shape {model_pos_embed_param.shape}. No interp."); return model_pos_embed_param.data, False
 
-    if checkpoint_pos_embed.ndim == 2:
-        num_tokens_ckpt, C_ckpt = checkpoint_pos_embed.shape
-    elif checkpoint_pos_embed.ndim == 3:
+
+    if checkpoint_pos_embed.ndim == 2: 
+         num_tokens_ckpt, C_ckpt = checkpoint_pos_embed.shape[0], checkpoint_pos_embed.shape[1]
+         checkpoint_pos_embed = checkpoint_pos_embed.unsqueeze(0) 
+    elif checkpoint_pos_embed.ndim == 3: 
+        if checkpoint_pos_embed.shape[0] != 1:
+             _local_logger_pe.warning(f"PE Interp: Checkpoint PE has batch size {checkpoint_pos_embed.shape[0]} > 1. Using first element.")
+             checkpoint_pos_embed = checkpoint_pos_embed[0].unsqueeze(0)
         num_tokens_ckpt, C_ckpt = checkpoint_pos_embed.shape[1], checkpoint_pos_embed.shape[2]
     else:
         _local_logger_pe.error(f"PE Interp: Unexpected checkpoint_pos_embed ndim: {checkpoint_pos_embed.ndim}. No interp."); return model_pos_embed_param.data, False
 
-    num_tokens_model, C_model = model_pos_embed_param.shape[1], model_pos_embed_param.shape[2]
+    if model_pos_embed_param.ndim == 3 and model_pos_embed_param.shape[0] == 1: 
+        num_tokens_model, C_model = model_pos_embed_param.shape[1], model_pos_embed_param.shape[2]
+    else: 
+        _local_logger_pe.warning(f"PE Interp: Model PE param has unusual shape {model_pos_embed_param.shape}. Assuming (N,C) if 2D.")
+        if model_pos_embed_param.ndim == 2:
+            num_tokens_model, C_model = model_pos_embed_param.shape[0], model_pos_embed_param.shape[1]
+        else:
+            _local_logger_pe.error(f"PE Interp: Cannot handle model PE shape {model_pos_embed_param.shape}. No interp."); return model_pos_embed_param.data, False
+
 
     if C_ckpt != C_model:
         _local_logger_pe.error(f"PE C-dim mismatch (ckpt:{C_ckpt} vs model:{C_model}). No interpolation."); return model_pos_embed_param.data, False
@@ -93,8 +120,9 @@ def _interpolate_positional_embedding(
     W0_patches = ssl_img_size_for_pos_embed[1] // hvt_patch_size
     if H0_patches * W0_patches != num_tokens_ckpt:
         _local_logger_pe.warning(f"PE Interp: num_tokens_ckpt ({num_tokens_ckpt}) does not match SSL grid ({H0_patches}x{W0_patches} from {ssl_img_size_for_pos_embed} / {hvt_patch_size}). Trying sqrt inference.")
-        if math.isqrt(num_tokens_ckpt)**2 == num_tokens_ckpt:
-            H0_patches = W0_patches = math.isqrt(num_tokens_ckpt)
+        sqrt_num_tokens_ckpt = math.isqrt(num_tokens_ckpt)
+        if sqrt_num_tokens_ckpt * sqrt_num_tokens_ckpt == num_tokens_ckpt:
+            H0_patches = W0_patches = sqrt_num_tokens_ckpt
             _local_logger_pe.info(f"PE Interp: Inferred source grid as {H0_patches}x{W0_patches} from num_tokens_ckpt {num_tokens_ckpt}.")
         else:
             _local_logger_pe.error(f"PE Interp: Cannot infer source grid for num_tokens_ckpt={num_tokens_ckpt}. No interp."); return model_pos_embed_param.data, False
@@ -108,13 +136,13 @@ def _interpolate_positional_embedding(
     try:
         pe_to_interp = checkpoint_pos_embed.reshape(1, H0_patches, W0_patches, C_ckpt).permute(0, 3, 1, 2)
         pe_interpolated = F.interpolate(pe_to_interp, size=(Ht_patches, Wt_patches), mode='bicubic', align_corners=False)
-        pe_interpolated = pe_interpolated.permute(0, 2, 3, 1).flatten(1, 2)
+        pe_interpolated = pe_interpolated.permute(0, 2, 3, 1).flatten(1, 2) 
         
-        if pe_interpolated.shape == model_pos_embed_param.shape:
+        if pe_interpolated.shape == model_pos_embed_param.data.shape: 
             _local_logger_pe.info("PE Interpolation successful.")
             return pe_interpolated, True
         else:
-            _local_logger_pe.error(f"PE Interp: Final shape mismatch after interpolation {pe_interpolated.shape} vs {model_pos_embed_param.shape}. No interp."); return model_pos_embed_param.data, False
+            _local_logger_pe.error(f"PE Interp: Final shape mismatch after interpolation {pe_interpolated.shape} vs {model_pos_embed_param.data.shape}. No interp."); return model_pos_embed_param.data, False
     except Exception as e:
         _local_logger_pe.error(f"PE Interp Exception: {e}", exc_info=True); return model_pos_embed_param.data, False
 
@@ -122,105 +150,135 @@ def load_and_prepare_hvt_model(hvt_model_instance: DiseaseAwareHVT, cfg: Dict[st
     _local_logger_load = logging.getLogger(f"{__name__}.load_and_prepare_hvt_model")
     hvt_model_instance.cpu()
 
-    if cfg.get("load_pretrained_backbone", False):
-        ssl_ckpt_path_from_cfg = cfg.get("pretrained_checkpoint_path")
-        resolved_ssl_ckpt_path = ssl_ckpt_path_from_cfg
-        project_root_for_path = cfg.get("PROJECT_ROOT_PATH")
-        if project_root_for_path is None and 'PACKAGE_ROOT_PATH' in cfg:
-            project_root_for_path = os.path.dirname(cfg['PACKAGE_ROOT_PATH'])
+    if not cfg.get("load_pretrained_backbone", False):
+        _local_logger_load.info("'load_pretrained_backbone' is False. SSL Backbone will not be loaded by this function.")
+        if hasattr(hvt_model_instance, 'classifier_head') and isinstance(hvt_model_instance.classifier_head, nn.Linear):
+            _local_logger_load.info(f"Classifier head already exists. Assuming it's correctly initialized for {cfg['num_classes']} classes.")
+        return hvt_model_instance.to(device)
 
-        if not os.path.isabs(resolved_ssl_ckpt_path) and project_root_for_path and ssl_ckpt_path_from_cfg:
-             resolved_ssl_ckpt_path = os.path.join(project_root_for_path, ssl_ckpt_path_from_cfg)
+    ssl_ckpt_path_from_cfg = cfg.get("pretrained_checkpoint_path") 
+    if not ssl_ckpt_path_from_cfg:
+        _local_logger_load.info("No SSL 'pretrained_checkpoint_path' provided. SSL Backbone will not be loaded.")
+        return hvt_model_instance.to(device)
 
-        if resolved_ssl_ckpt_path and os.path.exists(resolved_ssl_ckpt_path):
-            _local_logger_load.info(f"Loading SSL backbone weights from: {resolved_ssl_ckpt_path}")
-            checkpoint = torch.load(resolved_ssl_ckpt_path, map_location='cpu')
-            ssl_backbone_sd = checkpoint.get('model_backbone_state_dict')
+    resolved_ssl_ckpt_path = ssl_ckpt_path_from_cfg
+    project_root_for_path = cfg.get("PROJECT_ROOT_PATH")
+    if project_root_for_path is None and 'PACKAGE_ROOT_PATH' in cfg:
+        project_root_for_path = os.path.dirname(cfg['PACKAGE_ROOT_PATH'])
 
-            if ssl_backbone_sd:
-                current_model_sd = hvt_model_instance.state_dict()
-                new_sd_for_backbone = OrderedDict()
-                ssl_run_cfg_snapshot = checkpoint.get('run_config_snapshot', {})
-                ssl_img_size_val = cfg.get("ssl_pretrain_img_size_fallback",
-                                           ssl_run_cfg_snapshot.get('pretrain_img_size', cfg["img_size"]))
-                ssl_img_size_tuple = tuple(ssl_img_size_val)
+    if not os.path.isabs(resolved_ssl_ckpt_path) and project_root_for_path:
+            resolved_ssl_ckpt_path = os.path.join(project_root_for_path, ssl_ckpt_path_from_cfg)
 
-                if tuple(ssl_img_size_tuple) == tuple(cfg["img_size"]):
-                    _local_logger_load.info(f"SSL and Finetune img_size match: {ssl_img_size_tuple}.")
-                else:
-                    _local_logger_load.info(f"SSL img_size: {ssl_img_size_tuple}, Finetune img_size: {cfg['img_size']}. PE interpolation may occur.")
+    if not os.path.exists(resolved_ssl_ckpt_path):
+        _local_logger_load.warning(f"Specified SSL checkpoint path '{resolved_ssl_ckpt_path}' not found. SSL Backbone will not be loaded.")
+        return hvt_model_instance.to(device)
 
-                loaded_count, pe_interp_successful_count, head_skip_count = 0,0,0
-                for k_ckpt, v_ckpt in ssl_backbone_sd.items():
-                    if k_ckpt not in current_model_sd: continue
-                    if k_ckpt.startswith("classifier_head."): head_skip_count += 1; continue
+    _local_logger_load.info(f"Loading SSL backbone weights from: {resolved_ssl_ckpt_path}")
+    checkpoint = torch.load(resolved_ssl_ckpt_path, map_location='cpu')
+    ssl_backbone_sd = checkpoint.get('model_backbone_state_dict', checkpoint.get('model_state_dict', checkpoint.get('state_dict')))
 
-                    is_pe, target_pe_p = (k_ckpt in ["rgb_pos_embed", "spectral_pos_embed"]), getattr(hvt_model_instance, k_ckpt, None)
 
-                    if is_pe and target_pe_p is not None and isinstance(target_pe_p, nn.Parameter):
-                        ckpt_pe_c_dim = v_ckpt.shape[-1]
-                        model_pe_c_dim = target_pe_p.shape[-1]
+    if not ssl_backbone_sd:
+        _local_logger_load.error(f"Relevant state_dict not found in SSL checkpoint {resolved_ssl_ckpt_path}. SSL Backbone will not be loaded.")
+        return hvt_model_instance.to(device)
 
-                        if ckpt_pe_c_dim != model_pe_c_dim:
-                            _local_logger_load.warning(f"PE {k_ckpt}: C-dim mismatch (ckpt:{ckpt_pe_c_dim} vs model:{model_pe_c_dim}). Model's original PE will be used.")
-                            continue
+    current_model_sd = hvt_model_instance.state_dict()
+    new_sd_for_backbone = OrderedDict()
+    
+    ssl_run_cfg_snapshot = checkpoint.get('run_config_snapshot', {})
+    ssl_pretrain_img_size_config = cfg.get("ssl_pretrain_img_size_fallback", (224,224)) 
+    if 'pretrain_img_size' in ssl_run_cfg_snapshot: 
+        ssl_pretrain_img_size_config = ssl_run_cfg_snapshot['pretrain_img_size']
+    ssl_img_size_tuple = tuple(ssl_pretrain_img_size_config)
 
-                        ckpt_pe_n_tokens = v_ckpt.shape[-2] if v_ckpt.ndim > 1 else v_ckpt.shape[0] # Handle (N,C) or (1,N,C)
-                        model_pe_n_tokens = target_pe_p.shape[-2]
 
-                        if ckpt_pe_n_tokens != model_pe_n_tokens:
-                            _local_logger_load.info(f"PE {k_ckpt}: C-dim matches ({ckpt_pe_c_dim}), N-dim differs (ckpt_tokens:{ckpt_pe_n_tokens} vs model_tokens:{model_pe_n_tokens}). Attempting PE interpolation.")
-                            interp_pe_val, interp_success = _interpolate_positional_embedding(
-                                v_ckpt, target_pe_p,
-                                cfg['hvt_params_for_model_init']['patch_size'],
-                                tuple(cfg["img_size"]),
-                                ssl_img_size_tuple
-                            )
-                            if interp_success:
-                                new_sd_for_backbone[k_ckpt] = interp_pe_val
-                                pe_interp_successful_count +=1 # Count successful interpolations
-                            else:
-                                _local_logger_load.warning(f"PE {k_ckpt} interpolation failed. Model's original PE will be used.")
-                        elif v_ckpt.shape == target_pe_p.shape or \
-                             (v_ckpt.ndim == 2 and target_pe_p.ndim == 3 and v_ckpt.shape == target_pe_p.shape[1:]):
-                             _local_logger_load.info(f"PE {k_ckpt}: Shape matches. Loading directly.")
-                             new_sd_for_backbone[k_ckpt] = v_ckpt.view_as(target_pe_p.data)
-                             loaded_count +=1 # Counts as direct load if shapes fully match
-                        else:
-                             _local_logger_load.warning(f"PE {k_ckpt}: Unhandled shape scenario ({v_ckpt.shape} vs {target_pe_p.shape}). Model's original PE will be used.")
-                    
-                    elif v_ckpt.shape == current_model_sd[k_ckpt].shape:
-                        new_sd_for_backbone[k_ckpt] = v_ckpt; loaded_count +=1
-                    else: _local_logger_load.warning(f"Shape mismatch for {k_ckpt}: ckpt {v_ckpt.shape} vs model {current_model_sd[k_ckpt].shape}. Skipping.")
+    if tuple(ssl_img_size_tuple) == tuple(cfg["img_size"]):
+        _local_logger_load.info(f"SSL and Finetune img_size match: {ssl_img_size_tuple}.")
+    else:
+        _local_logger_load.info(f"SSL img_size: {ssl_img_size_tuple}, Finetune img_size: {cfg['img_size']}. PE interpolation may occur for SSL backbone.")
 
-                msg = hvt_model_instance.load_state_dict(new_sd_for_backbone, strict=False)
-                _local_logger_load.info(f"SSL Backbone weights loaded: {loaded_count} direct, {pe_interp_successful_count} PE interpolated, {head_skip_count} head layers skipped.")
-                if msg.missing_keys: _local_logger_load.warning(f"Missing keys when loading SSL backbone: {msg.missing_keys}")
-                if msg.unexpected_keys: _local_logger_load.warning(f"Unexpected keys in SSL backbone load: {msg.unexpected_keys}")
+    loaded_count, pe_interp_successful_count, head_skip_count = 0,0,0
+    
+    simclr_prefix = "backbone."
+    mae_prefix = "encoder." 
+    
+    filtered_ssl_sd = OrderedDict()
+    for k_ckpt, v_ckpt in ssl_backbone_sd.items():
+        k_to_check = k_ckpt
+        if k_ckpt.startswith(simclr_prefix):
+            k_to_check = k_ckpt[len(simclr_prefix):]
+        elif k_ckpt.startswith(mae_prefix): 
+             k_to_check = k_ckpt[len(mae_prefix):]
+        
+        if k_to_check in current_model_sd:
+            filtered_ssl_sd[k_to_check] = v_ckpt
+        elif k_ckpt in current_model_sd: 
+            filtered_ssl_sd[k_ckpt] = v_ckpt
 
-                if hasattr(hvt_model_instance, 'classifier_head') and isinstance(hvt_model_instance.classifier_head, nn.Linear):
-                    in_feats_current_model = hvt_model_instance.classifier_head.in_features
-                    final_norm_layer_key_rgb = 'norm_rgb_final_encoder.weight'
-                    final_norm_layer_key_classifier = 'classifier_head_norm.weight'
-                    expected_in_features = None
-                    if final_norm_layer_key_classifier in current_model_sd:
-                        expected_in_features = current_model_sd[final_norm_layer_key_classifier].shape[0]
-                    elif final_norm_layer_key_rgb in current_model_sd:
-                         expected_in_features = current_model_sd[final_norm_layer_key_rgb].shape[0]
-                    
-                    if expected_in_features is not None and in_feats_current_model != expected_in_features:
-                        _local_logger_load.warning(f"Classifier head in_features ({in_feats_current_model}) differs from expected from norm ({expected_in_features}). Re-initializing with {expected_in_features}.")
-                        in_feats_current_model = expected_in_features
-                    elif expected_in_features is None:
-                         _local_logger_load.warning(f"Could not determine expected in_features for classifier head from norm layers. Using existing {in_feats_current_model}.")
 
-                    hvt_model_instance.classifier_head = nn.Linear(in_feats_current_model, cfg["num_classes"])
-                    _local_logger_load.info(f"Re-initialized HVT classifier_head for {cfg['num_classes']} classes (in_features={in_feats_current_model}).")
-                else: _local_logger_load.error("Could not re-initialize classifier_head. VERIFY HVT MODEL STRUCTURE.")
-            else: _local_logger_load.error(f"Key 'model_backbone_state_dict' not found in checkpoint {resolved_ssl_ckpt_path}. Backbone will be randomly initialized.")
-        elif ssl_ckpt_path_from_cfg: _local_logger_load.warning(f"Specified SSL checkpoint path '{resolved_ssl_ckpt_path}' not found. Backbone will be randomly initialized.")
-        else: _local_logger_load.info("No SSL checkpoint path provided ('pretrained_checkpoint_path' is empty or None). Backbone will be randomly initialized.")
-    else: _local_logger_load.info("'load_pretrained_backbone' is False. Backbone will be randomly initialized.")
+    for k_ckpt_mapped, v_ckpt in filtered_ssl_sd.items():
+        if k_ckpt_mapped not in current_model_sd: 
+            _local_logger_load.debug(f"Skipping {k_ckpt_mapped} from SSL checkpoint as it's not in current model structure.")
+            continue
+        if k_ckpt_mapped.startswith("classifier_head.") or k_ckpt_mapped.startswith("head."): 
+            head_skip_count += 1; continue
+
+        target_pe_p = getattr(hvt_model_instance, k_ckpt_mapped, None)
+        is_pe = (k_ckpt_mapped in ["rgb_pos_embed", "spectral_pos_embed"]) and \
+                target_pe_p is not None and isinstance(target_pe_p, nn.Parameter)
+
+        if is_pe:
+            interp_pe_val, interp_success = _interpolate_positional_embedding(
+                v_ckpt, target_pe_p, 
+                cfg['hvt_params_for_model_init']['patch_size'],
+                tuple(cfg["img_size"]), 
+                ssl_img_size_tuple      
+            )
+            if interp_success:
+                new_sd_for_backbone[k_ckpt_mapped] = interp_pe_val
+                pe_interp_successful_count +=1
+            else:
+                _local_logger_load.warning(f"PE {k_ckpt_mapped} interpolation failed. Model's original PE will be used.")
+        elif v_ckpt.shape == current_model_sd[k_ckpt_mapped].shape:
+            new_sd_for_backbone[k_ckpt_mapped] = v_ckpt; loaded_count +=1
+        else: 
+            _local_logger_load.warning(f"Shape mismatch for {k_ckpt_mapped}: ckpt {v_ckpt.shape} vs model {current_model_sd[k_ckpt_mapped].shape}. Skipping.")
+
+    if new_sd_for_backbone:
+        msg = hvt_model_instance.load_state_dict(new_sd_for_backbone, strict=False)
+        _local_logger_load.info(f"SSL Backbone weights loaded: {loaded_count} direct, {pe_interp_successful_count} PE interpolated, {head_skip_count} head layers skipped from SSL.")
+        if msg.missing_keys: _local_logger_load.warning(f"Missing keys when loading SSL backbone: {msg.missing_keys}")
+        if msg.unexpected_keys: _local_logger_load.warning(f"Unexpected keys in SSL backbone load: {msg.unexpected_keys}")
+    else:
+        _local_logger_load.warning("No weights from SSL backbone were loaded into the model (new_sd_for_backbone is empty).")
+
+    if hasattr(hvt_model_instance, 'classifier_head') and isinstance(hvt_model_instance.classifier_head, nn.Linear):
+        current_in_features = hvt_model_instance.classifier_head.in_features
+        expected_in_features = current_in_features 
+        
+        # Try to determine expected_in_features more reliably from the model architecture
+        # This is highly dependent on your HVT's structure.
+        # Example: if it's stored in `hvt_model_instance.embed_dim` or `hvt_model_instance.num_features`
+        if hasattr(hvt_model_instance, 'hvt_rgb') and hasattr(hvt_model_instance.hvt_rgb, 'embed_dim'):
+             expected_in_features = hvt_model_instance.hvt_rgb.embed_dim[-1] # Assuming last stage embed_dim
+        elif hasattr(hvt_model_instance, 'embed_dim_rgb'): # From create_disease_aware_hvt usage
+            expected_in_features = cfg['hvt_params_for_model_init']['embed_dim_rgb'] * (cfg['hvt_params_for_model_init']['mlp_ratio'] if cfg['hvt_params_for_model_init'].get('last_layer_expanded', False) else 1)
+            # The above line is a guess. The actual in_features for the head depends on what the HVT backbone outputs.
+            # It's often the embed_dim of the last stage, or a projection of it.
+            # For many ViT-like models, it's simply the `embed_dim`.
+            # The HVT implementation details are crucial here.
+            # Let's assume for now `create_disease_aware_hvt` sets this correctly.
+            expected_in_features = hvt_model_instance.classifier_head.in_features # Trust what was created
+
+        
+        if current_in_features != expected_in_features:
+            _local_logger_load.warning(f"Classifier head in_features ({current_in_features}) differs from expected backbone output ({expected_in_features}). Re-initializing head.")
+        
+        hvt_model_instance.classifier_head = nn.Linear(expected_in_features, cfg["num_classes"])
+        _local_logger_load.info(f"Re-initialized HVT classifier_head for {cfg['num_classes']} classes (in_features={expected_in_features}).")
+    else: 
+        _local_logger_load.error("Could not find or re-initialize classifier_head. VERIFY HVT MODEL STRUCTURE for finetuning.")
+        
     return hvt_model_instance.to(device)
 
 def main_execution_logic():
@@ -237,18 +295,23 @@ def main_execution_logic():
     root_logger_obj = logging.getLogger();
     if root_logger_obj.hasHandlers():
         for handler in root_logger_obj.handlers[:]: root_logger_obj.removeHandler(handler); handler.close()
-    setup_logging(log_file_name=final_log_filename, log_dir=abs_log_dir, log_level=logging.DEBUG, run_timestamp=run_ts)
+    setup_logging(log_file_name=final_log_filename, log_dir=abs_log_dir, log_level=logging.INFO, run_timestamp=run_ts) 
     logger = logging.getLogger(__name__)
 
     logger.info(f"======== Starting Phase 4: HVT Fine-tuning (Run ID: {run_ts}) ========")
-    logger.info(f"Full run configuration: {cfg}")
+    logger.info(f"Full run configuration loaded. Log dir: {abs_log_dir}")
+    if cfg.get("debug_nan_detection", False) or cfg.get("monitor_gradients", False):
+        logger.warning("Detailed debugging (NaNs, Gradients) is ON. Log level might be verbose.")
+        logging.getLogger().setLevel(logging.DEBUG) 
+
+    logger.debug(f"Full config: {cfg}") 
     set_global_seed(cfg["seed"])
     device = cfg["device"]
     if device == 'cuda' and not torch.cuda.is_available(): device = 'cpu'; cfg['device'] = 'cpu'; logger.warning("CUDA unavailable. Using CPU.")
     logger.info(f"Using device: {device}. GPU: {torch.cuda.get_device_name(0) if device=='cuda' else 'N/A'}")
     if cfg.get("cudnn_benchmark", True) and device == 'cuda': torch.backends.cudnn.benchmark = True
     if cfg.get("matmul_precision") and hasattr(torch,'set_float32_matmul_precision'):
-        try: torch.set_float32_matmul_precision(cfg["matmul_precision"])
+        try: torch.set_float32_matmul_precision(cfg["matmul_precision"]); logger.info(f"Set matmul_precision to {cfg['matmul_precision']}")
         except Exception as e: logger.warning(f"Failed to set matmul_precision: {e}")
 
     dataset_args = {
@@ -259,6 +322,7 @@ def main_execution_logic():
     }
     train_dataset = SARCLD2024Dataset(**dataset_args, split="train"); val_dataset = SARCLD2024Dataset(**dataset_args, split="val")
     class_names = train_dataset.get_class_names()
+    logger.info(f"Datasets loaded. Train samples: {len(train_dataset)}, Val samples: {len(val_dataset)}. Classes: {class_names}")
 
     sampler = None
     if cfg.get("use_weighted_sampler", False):
@@ -272,10 +336,10 @@ def main_execution_logic():
                 for i in range(num_classes):
                     count = class_counts_counter.get(i, 0)
                     if count > 0: per_class_weight[i] = 1.0 / math.sqrt(float(count))
-                    else: per_class_weight[i] = 1.0
+                    else: per_class_weight[i] = 1e-3 
                 logger.info(f"Using WeightedRandomSampler with 'sqrt_inv_count' mode. Per-class weights: {per_class_weight.numpy().round(3)}")
-            elif sampler_mode == "inv_freq": # Fallback to inv_freq if needed
-                retrieved_weights = train_dataset.get_class_weights()
+            elif sampler_mode == "inv_freq": 
+                retrieved_weights = train_dataset.get_class_weights() # REMOVED mode argument
                 if retrieved_weights is not None and len(retrieved_weights) == num_classes: per_class_weight = retrieved_weights
                 else: logger.error(f"Failed to get valid class weights for sampler (inv_freq mode).")
                 logger.info(f"Using WeightedRandomSampler with 'inv_freq' mode. Per-class weights: {per_class_weight.numpy().round(3)}")
@@ -286,6 +350,7 @@ def main_execution_logic():
             sampler = WeightedRandomSampler(sample_weights, num_samples=len(sample_weights), replacement=True)
             logger.info(f"WeightedRandomSampler enabled (mode: {sampler_mode}).")
 
+
     loader_args = {"num_workers": cfg.get('num_workers',4), "pin_memory": (device=='cuda'), "persistent_workers": (device=='cuda' and cfg.get('num_workers',4)>0)}
     if cfg.get('num_workers',4) > 0 and cfg.get('prefetch_factor') is not None : loader_args["prefetch_factor"] = cfg['prefetch_factor']
     train_loader = DataLoader(train_dataset, batch_size=cfg["batch_size"], sampler=sampler, shuffle=(sampler is None), drop_last=True, **loader_args)
@@ -293,7 +358,45 @@ def main_execution_logic():
     logger.info(f"Dataloaders created. Train batches: {len(train_loader)}, Val batches: {len(val_loader)}")
 
     model_hvt_instance = create_disease_aware_hvt(current_img_size=tuple(cfg["img_size"]), num_classes=cfg["num_classes"], model_params_dict=cfg['hvt_params_for_model_init'])
-    model = load_and_prepare_hvt_model(model_hvt_instance, cfg, device)
+    
+    resuming_finetune_succeeded_model_load = False
+    finetune_resume_path = cfg.get("resume_from_checkpoint")
+
+    if finetune_resume_path and os.path.exists(finetune_resume_path):
+        logger.info(f"Attempting to load finetuning checkpoint from: {finetune_resume_path}")
+        try:
+            # Try loading as a dictionary first (new format)
+            checkpoint_content = torch.load(finetune_resume_path, map_location='cpu')
+            if isinstance(checkpoint_content, dict) and 'model_state_dict' in checkpoint_content:
+                logger.info("Checkpoint is a dictionary with 'model_state_dict'. Loading model weights.")
+                missing_keys, unexpected_keys = model_hvt_instance.load_state_dict(checkpoint_content['model_state_dict'], strict=False)
+                if missing_keys: logger.warning(f"Resuming model (dict format): Missing keys: {missing_keys}")
+                if unexpected_keys: logger.warning(f"Resuming model (dict format): Unexpected keys: {unexpected_keys}")
+                resuming_finetune_succeeded_model_load = True
+                cfg['load_pretrained_backbone'] = False 
+                logger.info("Model state loaded from new format finetuning checkpoint. SSL backbone loading will be skipped.")
+            elif isinstance(checkpoint_content, OrderedDict) or isinstance(checkpoint_content, dict): # Likely old format (just state_dict)
+                logger.info("Checkpoint appears to be a model state_dict (old format). Loading model weights.")
+                missing_keys, unexpected_keys = model_hvt_instance.load_state_dict(checkpoint_content, strict=False)
+                if missing_keys: logger.warning(f"Resuming model (old format): Missing keys: {missing_keys}")
+                if unexpected_keys: logger.warning(f"Resuming model (old format): Unexpected keys: {unexpected_keys}")
+                resuming_finetune_succeeded_model_load = True
+                cfg['load_pretrained_backbone'] = False
+                logger.info("Model state loaded from old format finetuning checkpoint. SSL backbone loading will be skipped.")
+            else:
+                logger.error(f"Finetuning checkpoint {finetune_resume_path} is not a recognized format (dict with 'model_state_dict' or a raw state_dict).")
+
+        except Exception as e_load_ckpt:
+            logger.error(f"Error loading finetuning checkpoint {finetune_resume_path}: {e_load_ckpt}. Proceeding without resuming model weights from it.", exc_info=True)
+            resuming_finetune_succeeded_model_load = False # Ensure this is false
+
+    if resuming_finetune_succeeded_model_load:
+        model = model_hvt_instance.to(device)
+    else: # Fallback if resume failed or not specified
+        if finetune_resume_path and not os.path.exists(finetune_resume_path) : logger.warning(f"Specified resume_from_checkpoint path not found: {finetune_resume_path}")
+        logger.info("Proceeding with SSL backbone loading (if configured) or random init.")
+        model = load_and_prepare_hvt_model(model_hvt_instance, cfg, device)
+
     total_params = sum(p.numel() for p in model.parameters()); trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logger.info(f"Model ready. Total params: {total_params:,}, Trainable params: {trainable_params:,}")
 
@@ -312,33 +415,34 @@ def main_execution_logic():
     
     loss_fn_weights = None
     if cfg.get("use_weighted_loss", False):
-        retrieved_loss_weights = train_dataset.get_class_weights()
+        retrieved_loss_weights = train_dataset.get_class_weights() # REMOVED mode argument
         if retrieved_loss_weights is not None:
             loss_fn_weights = retrieved_loss_weights.to(device)
             logger.info(f"Using weighted CrossEntropyLoss. Weights: {loss_fn_weights.cpu().numpy().round(3)}")
         else: logger.warning("use_weighted_loss is True, but could not get class weights. Using unweighted loss.")
     criterion = nn.CrossEntropyLoss(weight=loss_fn_weights, label_smoothing=cfg.get("loss_label_smoothing", 0.1))
 
-    head_module_name = "classifier_head"
+    head_module_name = "classifier_head" 
     all_head_params = [p for n, p in model.named_parameters() if n.startswith(head_module_name + ".")]
     all_backbone_params = [p for n, p in model.named_parameters() if not n.startswith(head_module_name + ".")]
-    freeze_backbone_until_epoch_cfg = cfg.get("freeze_backbone_epochs", 0)
     
-    if freeze_backbone_until_epoch_cfg > 0: 
-        initial_lr_head = cfg['lr_head_frozen_phase']; initial_lr_backbone = 0.0 
-        logger.info(f"Optimizer initial setup: Backbone frozen. Head LR: {initial_lr_head:.2e}, Backbone LR: {initial_lr_backbone:.2e}")
-    else: 
-        initial_lr_head = cfg['lr_head_unfrozen_phase']; initial_lr_backbone = cfg['lr_backbone_unfrozen_phase']
-        logger.info(f"Optimizer initial setup: Training full model. Head LR: {initial_lr_head:.2e}, Backbone LR: {initial_lr_backbone:.2e}")
-
+    initial_lr_head_cfg = cfg['lr_head_unfrozen_phase']
+    initial_lr_backbone_cfg = cfg['lr_backbone_unfrozen_phase']
+    
     param_groups = []
-    if all_head_params: param_groups.append({'params': all_head_params, 'name': 'head', 'lr': initial_lr_head})
-    if all_backbone_params: param_groups.append({'params': all_backbone_params, 'name': 'backbone', 'lr': initial_lr_backbone})
+    if all_head_params: param_groups.append({'params': all_head_params, 'name': 'head', 'lr': initial_lr_head_cfg})
+    else: logger.warning("No parameters found for 'head' group.")
+    if all_backbone_params: param_groups.append({'params': all_backbone_params, 'name': 'backbone', 'lr': initial_lr_backbone_cfg})
+    else: logger.warning("No parameters found for 'backbone' group.")
     
     optim_name = cfg.get("optimizer", "AdamW").lower()
     default_opt_constructor_lr = max(cfg.get('lr_head_unfrozen_phase', 1e-4), cfg.get('lr_backbone_unfrozen_phase', 1e-5))
     opt_kwargs = cfg.get("optimizer_params", {}).copy(); opt_kwargs['weight_decay'] = cfg.get("weight_decay", 0.05)
     opt_kwargs['lr'] = default_opt_constructor_lr 
+
+    if not param_groups: 
+        logger.warning("No param groups defined (head/backbone not found). Using all model parameters for optimizer.")
+        param_groups = model.parameters()
 
     if optim_name == "adamw": optimizer = torch.optim.AdamW(param_groups, **opt_kwargs)
     elif optim_name == "sgd": opt_kwargs.pop('eps', None); optimizer = torch.optim.SGD(param_groups, **opt_kwargs)
@@ -346,37 +450,44 @@ def main_execution_logic():
     
     logger.info(f"Optimizer: {optimizer.__class__.__name__} created with overall defaults: {optimizer.defaults}")
     for pg_idx, pg in enumerate(optimizer.param_groups):
-        logger.info(f"  Group '{pg.get('name', f'UnnamedGroup{pg_idx}')}': Configured LR {pg.get('lr'):.2e}, WD {pg.get('weight_decay'):.2e}")
+         if isinstance(pg, dict): 
+            logger.info(f"  Group '{pg.get('name', f'UnnamedGroup{pg_idx}')}': Initial LR {pg.get('lr'):.2e}, WD {pg.get('weight_decay'):.2e}")
 
     scheduler, lr_scheduler_on_batch_flag = None, False
     sched_cfg_name = cfg.get("scheduler", "None").lower(); warmup_epochs_cfg = cfg.get("warmup_epochs", 0)
     total_epochs_for_sched = cfg["epochs"]; eff_accum_steps_sched = max(1, cfg.get("accumulation_steps", 1))
     steps_per_epoch_for_sched = len(train_loader) // eff_accum_steps_sched
-    if steps_per_epoch_for_sched == 0 and len(train_loader.dataset) > 0: steps_per_epoch_for_sched = 1
-    
+    if steps_per_epoch_for_sched == 0 and len(train_loader.dataset) > 0 : steps_per_epoch_for_sched = 1 
+
     if sched_cfg_name != "none" and steps_per_epoch_for_sched > 0 :
         if sched_cfg_name == "warmupcosine":
             total_sched_steps = total_epochs_for_sched * steps_per_epoch_for_sched
             warmup_sched_steps = warmup_epochs_cfg * steps_per_epoch_for_sched
             if warmup_sched_steps >= total_sched_steps and total_sched_steps > 0:
-                warmup_sched_steps = max(0, int(0.1 * total_sched_steps))
-                logger.warning(f"Warmup steps adjusted to {warmup_sched_steps}.")
+                warmup_sched_steps = max(0, int(0.1 * total_sched_steps)) 
+                logger.warning(f"Warmup steps adjusted to {warmup_sched_steps} as it was >= total_sched_steps.")
             if total_sched_steps > 0 : 
-                scheduler = get_cosine_schedule_with_warmup_step(optimizer, warmup_sched_steps, total_sched_steps, num_cycles=0.5, last_epoch=-1)
+                scheduler = get_cosine_schedule_with_warmup_step(optimizer, warmup_sched_steps, total_sched_steps, num_cycles=0.5, last_epoch=-1) 
                 lr_scheduler_on_batch_flag = True
             if scheduler: logger.info(f"Scheduler: WarmupCosine (per-step). WU Steps: {warmup_sched_steps}, Total Steps: {total_sched_steps}")
         elif sched_cfg_name == "cosineannealinglr":
             cosine_t_max = total_epochs_for_sched - warmup_epochs_cfg if warmup_epochs_cfg > 0 else total_epochs_for_sched
             if cosine_t_max <=0: cosine_t_max = 1 
-            main_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_t_max, eta_min=cfg.get("eta_min_lr", 0))
+            main_scheduler = CosineAnnealingLR(optimizer, T_max=cosine_t_max, eta_min=cfg.get("eta_min_lr", 1e-7)) 
             if warmup_epochs_cfg > 0:
                 warmup_scheduler = LinearLR(optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_epochs_cfg)
-                scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_epochs_cfg])
+                scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_epochs_cfg]) 
                 logger.info(f"Scheduler: SequentialLR(Warmup({warmup_epochs_cfg}eps) -> CosineAnnealingLR(T_max={cosine_t_max})).")
             else: scheduler = main_scheduler; logger.info(f"Scheduler: CosineAnnealingLR (per-epoch). T_max={cosine_t_max}")
+            lr_scheduler_on_batch_flag = False
+        elif sched_cfg_name == "reducelronplateau":
+            scheduler = ReduceLROnPlateau(optimizer, mode='max' if cfg.get("metric_to_monitor_early_stopping", "f1_macro") != "val_loss" else 'min',
+                                          factor=0.1, patience=cfg.get("lr_reduce_patience", 10), verbose=True)
+            logger.info(f"Scheduler: ReduceLROnPlateau. Factor=0.1, Patience={cfg.get('lr_reduce_patience', 10)}")
             lr_scheduler_on_batch_flag = False 
     
     scaler_obj = GradScaler(enabled=(cfg.get("amp_enabled", True) and device == 'cuda'))
+    
     finetuner_obj = Finetuner(
         model=model, optimizer=optimizer, criterion=criterion, device=device,
         scaler=scaler_obj, scheduler=scheduler, lr_scheduler_on_batch=lr_scheduler_on_batch_flag,
@@ -391,67 +502,128 @@ def main_execution_logic():
         gradient_log_interval=cfg.get("gradient_log_interval", 50)
     )
 
-    best_val_metric_val = 0.0 if cfg.get("metric_to_monitor_early_stopping", "f1_macro") != "val_loss" else float('inf')
+    start_epoch = 1
     metric_to_watch = cfg.get("metric_to_monitor_early_stopping", "f1_macro")
+    best_val_metric_val = 0.0 if metric_to_watch != "val_loss" else float('inf')
+    
+    # Try to load optimizer, scheduler, epoch etc. only if model weights were successfully loaded from the finetune checkpoint
+    # And if the checkpoint was the new dictionary format.
+    # If it was an old format checkpoint (just model state_dict), we can't resume opt/sched.
+    if resuming_finetune_succeeded_model_load:
+        # Check again if the loaded checkpoint was a dictionary (new format) to load opt/sched
+        if finetune_resume_path and os.path.exists(finetune_resume_path):
+            checkpoint_content_for_trainer = torch.load(finetune_resume_path, map_location='cpu')
+            if isinstance(checkpoint_content_for_trainer, dict) and 'optimizer_state_dict' in checkpoint_content_for_trainer:
+                 logger.info(f"Finetune checkpoint {finetune_resume_path} is new format. Loading trainer states (optimizer, scheduler, epoch...).")
+                 start_epoch, best_val_metric_val = finetuner_obj.load_checkpoint(finetune_resume_path, metric_to_watch)
+            else:
+                logger.warning(f"Finetune checkpoint {finetune_resume_path} was old format (model weights only). Optimizer, scheduler, and epoch not resumed. Starting fresh for these.")
+    elif cfg.get("resume_from_checkpoint") and not os.path.exists(cfg.get("resume_from_checkpoint")):
+        # This case was already handled by the model loading part, but good to be explicit
+        logger.error(f"Resume checkpoint specified ({cfg.get('resume_from_checkpoint')}) but not found. Training from scratch or SSL backbone.")
+
+
+    freeze_backbone_until_epoch_from_cfg = cfg.get("freeze_backbone_epochs", 0)
+    model_to_operate_on = model._orig_mod if hasattr(model, '_orig_mod') and isinstance(model._orig_mod, nn.Module) else model
+
+    if start_epoch > freeze_backbone_until_epoch_from_cfg and freeze_backbone_until_epoch_from_cfg > 0 :
+        logger.info(f"Resuming at epoch {start_epoch}, which is past the backbone freeze period ({freeze_backbone_until_epoch_from_cfg} epochs).")
+        logger.info("Ensuring backbone is unfrozen and LRs are set for unfrozen phase.")
+        for name, param in model_to_operate_on.named_parameters():
+            if name.startswith(head_module_name + "."): param.requires_grad = True
+            else: param.requires_grad = True 
+        
+        lr_head_target_unfrozen = cfg['lr_head_unfrozen_phase']
+        lr_backbone_target_unfrozen = cfg['lr_backbone_unfrozen_phase']
+        for p_group_idx, p_group in enumerate(optimizer.param_groups):
+            if not isinstance(p_group, dict): continue 
+            group_name = p_group.get('name')
+            target_lr_for_group = None
+            if group_name == 'head': target_lr_for_group = lr_head_target_unfrozen
+            elif group_name == 'backbone': target_lr_for_group = lr_backbone_target_unfrozen
+            
+            if target_lr_for_group is not None:
+                if p_group['lr'] != target_lr_for_group:
+                    logger.info(f"  Updating optimizer group '{group_name}' LR from {p_group['lr']:.2e} to {target_lr_for_group:.2e} for unfrozen phase.")
+                    p_group['lr'] = target_lr_for_group
+                if scheduler and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and p_group_idx < len(scheduler.base_lrs):
+                    if scheduler.base_lrs[p_group_idx] != target_lr_for_group:
+                        logger.info(f"    Updating Scheduler's base_lr for group '{group_name}' to {target_lr_for_group:.2e}")
+                        scheduler.base_lrs[p_group_idx] = target_lr_for_group
+        logger.info("Optimizer LRs (and potentially scheduler base_lrs) set for unfrozen phase due to resume point.")
+        for i, pg_check in enumerate(optimizer.param_groups):
+            if isinstance(pg_check, dict): logger.info(f"  Post-resume Group '{pg_check.get('name', i)}': LR {pg_check['lr']:.3e}")
+    
     patience_val = cfg.get("early_stopping_patience", float('inf'))
-    patience_count = 0; last_completed_ep_main = 0
+    patience_count = 0; last_completed_ep_main = start_epoch - 1
     
     abs_ckpt_save_dir = os.path.join(abs_log_dir, cfg.get("checkpoint_save_dir_name", "checkpoints"))
     os.makedirs(abs_ckpt_save_dir, exist_ok=True)
     logger.info(f"Checkpoints will be saved in: {abs_ckpt_save_dir}")
     
-    if scheduler :
-        logger.info("LRs after scheduler initialization:")
-        for i, opt_g in enumerate(optimizer.param_groups):
-            sched_base_lr_str = ""
-            if hasattr(scheduler, 'base_lrs') and i < len(scheduler.base_lrs):
-                 sched_base_lr_str = f", Scheduler Base LR {scheduler.base_lrs[i]:.2e}"
-            logger.info(f"  Opt Group {i} ('{opt_g.get('name')}'): Current LR in optimizer {opt_g['lr']:.2e}{sched_base_lr_str}")
-
-    freeze_backbone_until_epoch_from_cfg = cfg.get("freeze_backbone_epochs", 0)
-    logger.info(f"Starting fine-tuning for {cfg['epochs']} epochs. Monitor: '{metric_to_watch}'. Backbone frozen for initial {freeze_backbone_until_epoch_from_cfg} epochs.")
+    logger.info(f"Starting fine-tuning from epoch {start_epoch} up to {cfg['epochs']} epochs. Monitor: '{metric_to_watch}'. Initial Best: {best_val_metric_val:.4f}")
     nan_threshold_exceeded_flag = False
     try:
-        for epoch_1_based in range(1, cfg["epochs"] + 1):
+        for epoch_1_based in range(start_epoch, cfg["epochs"] + 1):
             last_completed_ep_main = epoch_1_based -1
             epoch_start_time = time.time()
 
             is_backbone_frozen_this_epoch = epoch_1_based <= freeze_backbone_until_epoch_from_cfg
-            model_to_operate_on = model._orig_mod if hasattr(model, '_orig_mod') and isinstance(model._orig_mod, nn.Module) else model
             
             backbone_target_requires_grad = not is_backbone_frozen_this_epoch
             newly_unfrozen_this_epoch_flag = False
 
             for name, param in model_to_operate_on.named_parameters():
-                if name.startswith(head_module_name + "."): param.requires_grad = True 
+                if name.startswith(head_module_name + "."): 
+                    if not param.requires_grad: param.requires_grad = True 
                 else: 
-                    if param.requires_grad != backbone_target_requires_grad: 
-                        if backbone_target_requires_grad and not param.requires_grad : newly_unfrozen_this_epoch_flag = True
+                    if param.requires_grad != backbone_target_requires_grad:
+                        if backbone_target_requires_grad and not param.requires_grad : 
+                            newly_unfrozen_this_epoch_flag = True 
                         param.requires_grad = backbone_target_requires_grad
             
-            if epoch_1_based == 1:
+            if epoch_1_based == 1 and not resuming_finetune_succeeded_model_load : 
                 current_phase_msg = "Starting in Frozen Backbone phase." if is_backbone_frozen_this_epoch else "Starting Full Model Training phase."
                 logger.info(f"Epoch {epoch_1_based}: {current_phase_msg}")
-            
-            elif newly_unfrozen_this_epoch_flag and (epoch_1_based == freeze_backbone_until_epoch_from_cfg + 1):
-                logger.info(f"Epoch {epoch_1_based}: Backbone UNPROZEN. Updating LRs.")
-                lr_head_target_unfrozen = cfg['lr_head_unfrozen_phase']; lr_backbone_target_unfrozen = cfg['lr_backbone_unfrozen_phase']
+                if is_backbone_frozen_this_epoch: 
+                    lr_head_frozen = cfg['lr_head_frozen_phase']
+                    lr_backbone_frozen = 0.0 
+                    for p_group in optimizer.param_groups:
+                        if not isinstance(p_group, dict): continue
+                        group_name = p_group.get('name')
+                        if group_name == 'head': p_group['lr'] = lr_head_frozen
+                        elif group_name == 'backbone': p_group['lr'] = lr_backbone_frozen
+                    logger.info(f"  Initial LRs for frozen phase: Head={lr_head_frozen:.2e}, Backbone={lr_backbone_frozen:.2e}")
+
+
+            if newly_unfrozen_this_epoch_flag and (epoch_1_based == freeze_backbone_until_epoch_from_cfg + 1):
+                logger.info(f"Epoch {epoch_1_based}: Backbone UNPROZEN. Updating LRs for unfrozen phase.")
+                lr_head_target_unfrozen = cfg['lr_head_unfrozen_phase']
+                lr_backbone_target_unfrozen = cfg['lr_backbone_unfrozen_phase']
                 for p_group_idx, p_group in enumerate(optimizer.param_groups):
+                    if not isinstance(p_group, dict): continue
                     group_name = p_group.get('name')
                     target_lr_for_group = None
                     if group_name == 'head': target_lr_for_group = lr_head_target_unfrozen
                     elif group_name == 'backbone': target_lr_for_group = lr_backbone_target_unfrozen
+                    
                     if target_lr_for_group is not None:
                         if p_group['lr'] != target_lr_for_group:
-                            logger.info(f"  Updating {group_name} group optimizer LR to {target_lr_for_group:.2e}")
+                            logger.info(f"  Updating optimizer group '{group_name}' LR to {target_lr_for_group:.2e}")
                             p_group['lr'] = target_lr_for_group
-                        if hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and p_group_idx < len(scheduler.base_lrs):
-                            if scheduler.base_lrs[p_group_idx] != target_lr_for_group:
+                        if scheduler and hasattr(scheduler, 'base_lrs') and scheduler.base_lrs and p_group_idx < len(scheduler.base_lrs):
+                            if scheduler.base_lrs[p_group_idx] != target_lr_for_group: 
                                 logger.info(f"    Updating Scheduler's base_lr for group '{group_name}' to {target_lr_for_group:.2e}")
                                 scheduler.base_lrs[p_group_idx] = target_lr_for_group
-                        # ... (Logic for SequentialLR if used)
-                logger.info("  Effective LRs for scheduler after unfreezing update:")
-                for i, pg in enumerate(optimizer.param_groups): logger.info(f"    Opt Group {i} ('{pg.get('name')}'): LR {pg.get('lr'):.3e}, Scheduler base {scheduler.base_lrs[i]:.3e}" if hasattr(scheduler, 'base_lrs') else "")
+                                if isinstance(scheduler, SequentialLR): 
+                                    for internal_sched in scheduler.schedulers:
+                                        if hasattr(internal_sched, 'base_lrs') and internal_sched.base_lrs and p_group_idx < len(internal_sched.base_lrs):
+                                            internal_sched.base_lrs[p_group_idx] = target_lr_for_group
+
+                logger.info("  Effective LRs after unfreezing update:")
+                for i, pg_check in enumerate(optimizer.param_groups):
+                    if isinstance(pg_check, dict): logger.info(f"    Opt Group {i} ('{pg_check.get('name')}'): LR {pg_check['lr']:.3e}, Scheduler base {scheduler.base_lrs[i]:.3e}" if scheduler and hasattr(scheduler, 'base_lrs') and i < len(scheduler.base_lrs) else f"    Opt Group {i} ('{pg_check.get('name')}'): LR {pg_check['lr']:.3e}")
+
 
             avg_train_loss, nan_threshold_exceeded_flag = finetuner_obj.train_one_epoch(train_loader, epoch_1_based, cfg["epochs"])
             if nan_threshold_exceeded_flag:
@@ -464,29 +636,40 @@ def main_execution_logic():
                 if metric_to_watch == "val_loss": current_val_metric_for_decision = avg_val_loss
                 else: current_val_metric_for_decision = val_metrics_dict.get(metric_to_watch)
 
-                if isinstance(finetuner_obj.scheduler, ReduceLROnPlateau) and current_val_metric_for_decision is not None: 
-                    finetuner_obj.scheduler.step(current_val_metric_for_decision)
-                elif finetuner_obj.scheduler and not finetuner_obj.lr_scheduler_on_batch: 
-                    finetuner_obj.scheduler.step()
+                if finetuner_obj.scheduler:
+                    if isinstance(finetuner_obj.scheduler, ReduceLROnPlateau) and current_val_metric_for_decision is not None: 
+                        finetuner_obj.scheduler.step(current_val_metric_for_decision)
+                    elif not finetuner_obj.lr_scheduler_on_batch and not isinstance(finetuner_obj.scheduler, ReduceLROnPlateau): 
+                        finetuner_obj.scheduler.step()
 
                 if current_val_metric_for_decision is not None:
                     is_better = (current_val_metric_for_decision > best_val_metric_val) if metric_to_watch != "val_loss" else \
                                 (current_val_metric_for_decision < best_val_metric_val)
-                    if is_better:
+                    if is_better and not math.isnan(current_val_metric_for_decision): 
                         best_val_metric_val = current_val_metric_for_decision
                         if cfg.get("best_model_filename"): 
-                            finetuner_obj.save_model_checkpoint(os.path.join(abs_ckpt_save_dir, cfg["best_model_filename"]))
+                            finetuner_obj.save_checkpoint(
+                                os.path.join(abs_ckpt_save_dir, cfg["best_model_filename"]),
+                                epoch_1_based, best_val_metric_val, metric_to_watch
+                            )
                         logger.info(f"E{epoch_1_based}: New best! Val {metric_to_watch}: {best_val_metric_val:.4f}")
                         patience_count = 0
-                    else: 
+                    elif not math.isnan(current_val_metric_for_decision):
                         patience_count += 1; logger.info(f"E{epoch_1_based}: Val {metric_to_watch} ({current_val_metric_for_decision:.4f}) not better. Patience: {patience_count}/{patience_val}")
-                else: logger.warning(f"E{epoch_1_based}: Metric '{metric_to_watch}' not found. Cannot make early stopping decision.")
+                    else: 
+                        logger.warning(f"E{epoch_1_based}: Metric '{metric_to_watch}' is NaN. Cannot make early stopping decision or save best model based on this.")
+                        patience_count +=1 
+                else: 
+                    logger.warning(f"E{epoch_1_based}: Metric '{metric_to_watch}' not found or is None. Cannot make early stopping decision.")
+                    patience_count += 1
             
             if cfg.get("save_checkpoint_every_n_epochs", 0) > 0 and \
                epoch_1_based % cfg["save_checkpoint_every_n_epochs"] == 0:
                 periodic_ckpt_name = f"checkpoint_epoch_{epoch_1_based}.pth"
-                finetuner_obj.save_model_checkpoint(os.path.join(abs_ckpt_save_dir, periodic_ckpt_name))
-
+                finetuner_obj.save_checkpoint(
+                    os.path.join(abs_ckpt_save_dir, periodic_ckpt_name),
+                    epoch_1_based, best_val_metric_val, metric_to_watch
+                )
 
             if patience_count >= patience_val: 
                 logger.info(f"Early stopping at E{epoch_1_based}. Patience ({patience_val}) exceeded for '{metric_to_watch}'.")
@@ -496,14 +679,17 @@ def main_execution_logic():
             logger.info(f"Epoch {epoch_1_based} completed in {epoch_duration:.2f}s.")
             if device == 'cuda': logger.debug(f"CUDA Mem E{epoch_1_based} End: Alloc {torch.cuda.memory_allocated(0)/1024**2:.1f}MB, Reserved {torch.cuda.memory_reserved(0)/1024**2:.1f}MB")
 
-    except KeyboardInterrupt: logger.warning(f"Fine-tuning interrupted. Last completed epoch: {last_completed_ep_main}.")
-    except Exception as e_fatal: logger.critical(f"Critical error at epoch {last_completed_ep_main + 1}: {e_fatal}", exc_info=True); sys.exit(1)
+    except KeyboardInterrupt: logger.warning(f"Fine-tuning interrupted by user. Last completed epoch: {last_completed_ep_main}.")
+    except Exception as e_fatal: logger.critical(f"Critical error during training at epoch {last_completed_ep_main + 1}: {e_fatal}", exc_info=True); sys.exit(1)
     finally:
         logger.info(f"Fine-tuning ended. Last completed epoch: {last_completed_ep_main}.")
         if nan_threshold_exceeded_flag: logger.error("Training stopped prematurely due to excessive NaN losses.")
         if 'finetuner_obj' in locals() and finetuner_obj is not None and cfg.get("final_model_filename"):
-            finetuner_obj.save_model_checkpoint(os.path.join(abs_ckpt_save_dir, cfg["final_model_filename"]))
-        logger.info(f"Fine-tuning summary: Best validation '{metric_to_watch}': {best_val_metric_val:.4f}.")
+            finetuner_obj.save_checkpoint(
+                os.path.join(abs_ckpt_save_dir, cfg["final_model_filename"]),
+                last_completed_ep_main, best_val_metric_val, metric_to_watch
+            )
+        logger.info(f"Fine-tuning summary: Best validation '{metric_to_watch}': {best_val_metric_val:.4f} (achieved over {last_completed_ep_main - (start_epoch -1)} trained epochs in this run).")
 
 if __name__ == "__main__":
     try: main_execution_logic()
