@@ -1,13 +1,13 @@
 # phase4_finetuning/main.py - Enhanced for 90%+ accuracy with advanced techniques
-from collections import OrderedDict, Counter as PyCounter
+from collections import OrderedDict, defaultdict
 import os
-import logging
+import logging # Basic logging import
 import torch
 import torch.nn as nn
 import numpy as np
 from torch.utils.data import DataLoader, WeightedRandomSampler
 from torch.cuda.amp import GradScaler, autocast
-from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts, LambdaLR, SequentialLR, LinearLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import OneCycleLR, ReduceLROnPlateau
 import argparse
 import yaml
 import torch.nn.functional as F
@@ -20,369 +20,31 @@ import time
 import random
 from torch.optim import AdamW, SGD
 import warnings
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support, confusion_matrix, classification_report
+from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
-from torchvision.transforms import functional as TF
-import torchvision.transforms as T
-from PIL import Image
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+import torchvision.transforms.v2 as T_v2
 
-logger: Optional[logging.Logger] = None
+# This global variable will be assigned by the main function after setup.
+# Avoid direct assignment here to ensure setup_logging is the source.
+logger_main_global: Optional[logging.Logger] = None
 
-# Assuming these modules are in the correct path relative to this file
-# or installed in the environment.
-# Replace with actual paths if necessary, e.g., if phase2_model is a sibling directory:
-# sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 try:
-    # If these are local to a 'phase4_finetuning' package:
-    from .config import config as base_finetune_config # This might be overridden by load_enhanced_config
-    from .dataset import SARCLD2024Dataset # Make sure this dataset can handle dynamic img_size
-    # from .utils.augmentations import create_augmentation # We define create_disease_optimized_augmentations locally
-    from .utils.logging_setup import setup_logging
-    # from .finetune.trainer import Finetuner # Trainer logic will be built into main
-    from phase2_model.models.hvt import DiseaseAwareHVT, create_disease_aware_hvt
+    from .config import config as main_config_from_phase4
+    from .dataset import SARCLD2024Dataset
+    from .utils.augmentations import create_cotton_leaf_augmentation
+    from .utils.logging_setup import setup_logging # This is the function in question
+    from .finetune.trainer import EnhancedFinetuner
+    from phase2_model.models.hvt import create_disease_aware_hvt
+    from .utils.metrics import compute_metrics
 except ImportError as e_imp:
-    print(f"CRITICAL IMPORT ERROR: {e_imp}. Please ensure all custom modules and phase2_model are in PYTHONPATH.", file=sys.stderr)
+    print(f"CRITICAL IMPORT ERROR in main.py: {e_imp}. Check paths and ensure all modules are accessible.", file=sys.stderr)
     traceback.print_exc()
-    # Fallback for running as a script if imports fail due to relative paths
-    try:
-        # This block is for trying to run the script directly if it's not part of a package
-        # For example, if 'phase2_model' is a top-level directory:
-        # sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))) # Adjust as needed
-        # from phase2_model.models.hvt import DiseaseAwareHVT, create_disease_aware_hvt
-        # from dataset import SARCLD2024Dataset # Assuming dataset.py is in the same directory
-        # from utils.logging_setup import setup_logging # Assuming utils is in the same directory
-        pass # Keep previous error if this also fails
-    except ImportError:
-        pass
-    # sys.exit(1) # Commenting out for now to allow completion, but this indicates a setup issue.
-
-
-class FocalLoss(nn.Module):
-    """Enhanced Focal Loss with class-specific alpha"""
-    def __init__(self, alpha: Optional[List[float]] = None, gamma: float = 2.0, reduction: str = 'mean', num_classes: int = 8, ignore_index: int = -100):
-        super(FocalLoss, self).__init__()
-        if alpha is None:
-            self.alpha = None
-        elif isinstance(alpha, (float, int)):
-            self.alpha = torch.ones(num_classes) * alpha
-        elif isinstance(alpha, list):
-            assert len(alpha) == num_classes, f"Alpha list length {len(alpha)} must match num_classes {num_classes}"
-            self.alpha = torch.tensor(alpha, dtype=torch.float32)
-        else:
-            raise ValueError("alpha must be float, int, list of floats, or None")
-
-        self.gamma = gamma
-        self.reduction = reduction
-        self.ignore_index = ignore_index
-        self.num_classes = num_classes
-
-    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        # Filter out ignore_index targets
-        valid_mask = targets != self.ignore_index
-        inputs = inputs[valid_mask]
-        targets = targets[valid_mask]
-
-        if inputs.numel() == 0: # All targets were ignore_index
-            return torch.tensor(0.0, device=inputs.device, requires_grad=True)
-
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-
-        if self.alpha is not None:
-            if self.alpha.device != targets.device:
-                self.alpha = self.alpha.to(targets.device)
-
-            # Ensure alpha tensor matches the number of classes in inputs if dynamic
-            if self.alpha.size(0) != inputs.size(1):
-                 # This might happen if num_classes passed to init was different from actual model output
-                warnings.warn(f"FocalLoss alpha size ({self.alpha.size(0)}) != inputs num_classes ({inputs.size(1)}). Re-creating alpha.")
-                self.alpha = self.alpha.new_ones(inputs.size(1)) # Fallback to ones
-
-            at = self.alpha.gather(0, targets)
-            focal_loss_val = at * (1 - pt) ** self.gamma * ce_loss # Corrected: CE loss, not logpt for positive form
-        else:
-            focal_loss_val = (1 - pt) ** self.gamma * ce_loss
-
-        if self.reduction == 'mean':
-            return focal_loss_val.mean()
-        elif self.reduction == 'sum':
-            return focal_loss_val.sum()
-        else:
-            return focal_loss_val
-
-class AdaptiveFocalLoss(nn.Module):
-    """Adaptive Focal Loss that adjusts gamma based on training progress (e.g., accuracy)"""
-    def __init__(self, alpha: Optional[List[float]] = None, gamma_start: float = 2.0, gamma_end: float = 0.5, num_classes: int = 8, reduction: str = 'mean'):
-        super().__init__()
-        if alpha is None:
-            self.alpha_t = None
-        elif isinstance(alpha, (float, int)):
-            self.alpha_t = torch.ones(num_classes) * alpha
-        elif isinstance(alpha, list):
-            assert len(alpha) == num_classes, f"Alpha list length {len(alpha)} must match num_classes {num_classes}"
-            self.alpha_t = torch.tensor(alpha, dtype=torch.float32)
-        else:
-            raise ValueError("alpha must be float, int, list of floats, or None")
-
-        self.gamma_start = gamma_start
-        self.gamma_end = gamma_end
-        self.num_classes = num_classes
-        self.current_gamma = gamma_start
-        self.reduction = reduction
-        self.ignore_index = -100 # Standard ignore index
-
-    def update_gamma(self, metric_value: float, target_metric: float = 0.95):
-        # Reduce gamma as metric_value (e.g. accuracy) improves to focus more on hard examples
-        # Progress is normalized metric_value towards target_metric
-        progress = min(max(metric_value / target_metric, 0.0), 1.0)
-        self.current_gamma = self.gamma_start * (1 - progress) + self.gamma_end * progress
-        logger.info(f"AdaptiveFocalLoss: Updated gamma to {self.current_gamma:.4f} based on metric {metric_value:.4f}")
-
-    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        valid_mask = targets != self.ignore_index
-        inputs = inputs[valid_mask]
-        targets = targets[valid_mask]
-
-        if inputs.numel() == 0:
-            return torch.tensor(0.0, device=inputs.device, requires_grad=True)
-
-        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-
-        if self.alpha_t is not None:
-            if self.alpha_t.device != targets.device:
-                self.alpha_t = self.alpha_t.to(targets.device)
-            if self.alpha_t.size(0) != inputs.size(1):
-                 warnings.warn(f"AdaptiveFocalLoss alpha size ({self.alpha_t.size(0)}) != inputs num_classes ({inputs.size(1)}). Re-creating alpha.")
-                 self.alpha_t = self.alpha_t.new_ones(inputs.size(1)) # Fallback to ones
-
-            at = self.alpha_t.gather(0, targets)
-            focal_loss_val = at * (1 - pt) ** self.current_gamma * ce_loss
-        else:
-            focal_loss_val = (1 - pt) ** self.current_gamma * ce_loss
-
-        if self.reduction == 'mean':
-            return focal_loss_val.mean()
-        elif self.reduction == 'sum':
-            return focal_loss_val.sum()
-        else:
-            return focal_loss_val
-
-class LabelSmoothingCrossEntropy(nn.Module):
-    """Enhanced Label Smoothing with adaptive smoothing and class weights"""
-    def __init__(self, num_classes: int, smoothing: float = 0.1, class_weights: Optional[torch.Tensor] = None, adaptive: bool = True):
-        super().__init__()
-        self.num_classes = num_classes
-        self.smoothing = smoothing
-        self.confidence = 1.0 - smoothing
-        self.adaptive = adaptive
-        if class_weights is not None:
-            assert class_weights.ndim == 1 and class_weights.size(0) == num_classes, \
-                "class_weights must be a 1D tensor with size num_classes"
-        self.register_buffer('class_weights', class_weights)
-
-    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        current_smoothing = self.smoothing
-        current_confidence = self.confidence
-
-        if self.adaptive:
-            with torch.no_grad(): # Detach operations for adaptive smoothing calculation
-                pred_softmax = F.softmax(pred.detach(), dim=1)
-                pred_max_probs = pred_softmax.max(dim=1)[0]
-                # Adaptive smoothing: increase smoothing if model is overconfident on average
-                # This is a heuristic; could be refined.
-                # Average confidence factor: 1.0 means low confidence (uniform), 0.0 means high confidence (one-hot)
-                avg_confidence_factor = 1.0 - pred_max_probs.mean()
-                # Modulate smoothing by this factor: less smoothing if model is less confident.
-                current_smoothing = self.smoothing * avg_confidence_factor
-                current_confidence = 1.0 - current_smoothing
-        
-        pred = pred.log_softmax(dim=-1)
-        
-        with torch.no_grad():
-            true_dist = torch.zeros_like(pred)
-            true_dist.fill_(current_smoothing / (self.num_classes - 1))
-            true_dist.scatter_(1, target.data.unsqueeze(1), current_confidence)
-        
-        loss = torch.sum(-true_dist * pred, dim=-1)
-        
-        if self.class_weights is not None:
-            weights = self.class_weights.to(target.device)[target]
-            loss = loss * weights
-        
-        return loss.mean()
-
-class AdvancedCutMixUp:
-    """ Standard CutMix and MixUp implementation """
-    def __init__(self, mixup_alpha: float = 0.4, cutmix_alpha: float = 1.0, prob: float = 0.8, switch_prob: float = 0.5, num_classes: int = 8):
-        self.mixup_alpha = mixup_alpha
-        self.cutmix_alpha = cutmix_alpha
-        self.prob = prob
-        self.switch_prob = switch_prob
-        self.num_classes = num_classes
-
-    def __call__(self, images: torch.Tensor, labels: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, bool]:
-        # Returns: mixed_images, labels_a, labels_b, lam, is_mixup_or_cutmix_applied
-        if np.random.rand() > self.prob:
-            # If one-hot encoded labels are expected by loss, convert here
-            # For CrossEntropy, index labels are fine.
-            return images, labels, labels, 1.0, False # No mixup/cutmix
-
-        use_mixup = np.random.rand() < self.switch_prob
-        
-        if use_mixup and self.mixup_alpha > 0:
-            return self.mixup(images, labels)
-        elif not use_mixup and self.cutmix_alpha > 0:
-            return self.cutmix(images, labels)
-        else: # Fallback if selected method has alpha=0
-            return images, labels, labels, 1.0, False
-
-    def mixup(self, x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, bool]:
-        lam = np.random.beta(self.mixup_alpha, self.mixup_alpha)
-        batch_size = x.size(0)
-        index = torch.randperm(batch_size, device=x.device)
-        
-        mixed_x = lam * x + (1 - lam) * x[index, :]
-        y_a, y_b = y, y[index]
-        return mixed_x, y_a, y_b, lam, True
-
-    def cutmix(self, x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float, bool]:
-        lam = np.random.beta(self.cutmix_alpha, self.cutmix_alpha)
-        batch_size = x.size(0)
-        index = torch.randperm(batch_size, device=x.device)
-        
-        bbx1, bby1, bbx2, bby2 = self.rand_bbox(x.size(), lam)
-        mixed_x = x.clone() # Important to clone
-        mixed_x[:, :, bby1:bby2, bbx1:bbx2] = x[index, :, bby1:bby2, bbx1:bbx2]
-        
-        # Adjust lambda to reflect actual mixed area
-        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (x.size()[-1] * x.size()[-2]))
-        y_a, y_b = y, y[index]
-        return mixed_x, y_a, y_b, lam, True
-
-    def rand_bbox(self, size: torch.Size, lam: float) -> Tuple[int, int, int, int]:
-        W = size[2]
-        H = size[3]
-        cut_rat = np.sqrt(1. - lam)
-        cut_w = int(W * cut_rat)
-        cut_h = int(H * cut_rat)
-
-        # Uniform
-        cx = np.random.randint(W)
-        cy = np.random.randint(H)
-
-        bbx1 = np.clip(cx - cut_w // 2, 0, W)
-        bby1 = np.clip(cy - cut_h // 2, 0, H)
-        bbx2 = np.clip(cx + cut_w // 2, 0, W)
-        bby2 = np.clip(cy + cut_h // 2, 0, H)
-
-        return bbx1, bby1, bbx2, bby2
-
-class SAM(torch.optim.Optimizer):
-    """Sharpness-Aware Minimization with adaptive rho"""
-    def __init__(self, params, base_optimizer_cls, rho=0.05, adaptive=True, **kwargs):
-        assert rho >= 0.0, f"Invalid rho: {rho}"
-        defaults = dict(rho=rho, adaptive=adaptive, **kwargs)
-        super(SAM, self).__init__(params, defaults)
-        
-        # kwargs for base_optimizer are passed via defaults
-        self.base_optimizer = base_optimizer_cls(self.param_groups, **kwargs)
-        self.param_groups = self.base_optimizer.param_groups # SAM needs to manipulate groups of base optimizer
-        # self.defaults.update(self.base_optimizer.defaults) # Redundant due to how param_groups are set
-
-    @torch.no_grad()
-    def first_step(self, zero_grad=False):
-        grad_norm = self._grad_norm()
-        for group in self.param_groups:
-            scale = group["rho"] / (grad_norm + 1e-12)
-            
-            for p in group["params"]:
-                if p.grad is None: 
-                    continue
-                self.state[p]["old_p"] = p.data.clone()
-                e_w = (torch.pow(p.data, 2) if group["adaptive"] else 1.0) * p.grad * scale.to(p)
-                p.add_(e_w)
-        
-        if zero_grad: 
-            self.zero_grad() # Zeroes grads of model params
-
-    @torch.no_grad()
-    def second_step(self, zero_grad=False):
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.grad is None or p not in self.state or "old_p" not in self.state[p]: # check if old_p exists
-                    continue
-                p.data = self.state[p]["old_p"] # Restore original weights
-        
-        self.base_optimizer.step() # Perform update with original weights and new gradients
-        
-        if zero_grad: 
-            self.zero_grad()
-
-    # step method is inherited from base_optimizer for SAM.
-    # For SAM, usually it's model.forward(); loss.backward(); optimizer.first_step(); model.forward(); loss2.backward(); optimizer.second_step();
-    # This step() method is for when SAM is used like a standard optimizer, requiring a closure.
-    @torch.no_grad()
-    def step(self, closure=None):
-        if closure is None:
-            raise ValueError("SAM optimizer requires a closure for the step() method.")
-        
-        # First, calculate and store original parameter values
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.grad is not None: # Ensure grad exists before trying to use it
-                     self.state[p]["old_p"] = p.data.clone()
-
-        # Calculate L_S(w + e(w))
-        # This closure should re-evaluate loss after first_step perturbation
-        # Closure needs to handle its own zero_grad for model before loss calculation.
-        
-        # First ascent step
-        self.first_step(zero_grad=True) # zero_grad=True will clear current grads for the next backward pass
-        
-        # Calculate gradients at perturbed weights
-        with torch.enable_grad(): # Ensure gradients are computed for this forward/backward pass
-            loss = closure()
-            loss.backward() # This computes gradients at w + e(w)
-            
-        # Second descent step
-        self.second_step(zero_grad=False) # zero_grad=False because grads are already for w_adv
-
-    def _grad_norm(self):
-        # self.base_optimizer.param_groups is self.param_groups, so it's fine
-        shared_device = self.param_groups[0]["params"][0].device 
-        
-        # Filter out params without gradients
-        valid_params = [
-            p for group in self.param_groups for p in group["params"] if p.grad is not None
-        ]
-        if not valid_params: # If no params have grads (e.g. after zero_grad)
-            return torch.tensor(0.0, device=shared_device)
-
-        norms = []
-        for group in self.param_groups:
-            for p in group["params"]:
-                if p.grad is None:
-                    continue
-                param_norm_term = (torch.abs(p.data) if group["adaptive"] else 1.0) * p.grad
-                norms.append(param_norm_term.norm(p=2))
-        
-        if not norms: # Handles case where all grads might be None after filtering
-             return torch.tensor(0.0, device=shared_device)
-
-        norm = torch.norm(torch.stack(norms), p=2)
-        return norm.to(shared_device)
-
-    def zero_grad(self, set_to_none: bool = False): # Ensure SAM's zero_grad calls base_optimizer's
-        self.base_optimizer.zero_grad(set_to_none=set_to_none)
-
+    sys.exit(1)
 
 class EMA:
     """Exponential Moving Average with warmup and decay scheduling"""
-    def __init__(self, model: nn.Module, decay: float = 0.9999, warmup_steps: int = 1000, use_num_updates: bool = True):
+    def __init__(self, model: nn.Module, decay: float = 0.9999, warmup_steps: int = 0, use_num_updates: bool = True):
         self.model = model
         self.decay = decay
         self.warmup_steps = warmup_steps
@@ -396,1239 +58,794 @@ class EMA:
         for name, param in self.model.named_parameters():
             if param.requires_grad:
                 self.shadow[name] = param.data.clone()
-    
+
     def update(self):
         self.num_updates += 1
-        
         current_decay = self.decay
         if self.use_num_updates: # Adaptive decay during early stages
             current_decay = min(self.decay, (1 + self.num_updates) / (10 + self.num_updates))
-        
-        # EMA Warmup: gradually decrease the effect of EMA updates during warmup
+
         if self.warmup_steps > 0 and self.num_updates <= self.warmup_steps:
-            # Effective decay starts lower and ramps up to current_decay
-            warmup_factor = self.num_updates / self.warmup_steps 
-            effective_decay = current_decay * warmup_factor 
+            warmup_factor = self.num_updates / self.warmup_steps
+            effective_decay = current_decay * warmup_factor
         else:
             effective_decay = current_decay
-        
+
         for name, param in self.model.named_parameters():
             if param.requires_grad and name in self.shadow:
-                new_average = (1.0 - effective_decay) * param.data + effective_decay * self.shadow[name]
+                param_data_type = param.data.dtype
+                shadow_param = self.shadow[name].to(device=param.data.device, dtype=param_data_type)
+                new_average = (1.0 - effective_decay) * param.data + effective_decay * shadow_param
                 self.shadow[name] = new_average.clone()
-    
+
     def apply_shadow(self):
-        """Copies shadow parameters to model for evaluation."""
         for name, param in self.model.named_parameters():
             if param.requires_grad and name in self.shadow:
                 self.backup[name] = param.data.clone()
-                param.data = self.shadow[name]
-    
+                param.data = self.shadow[name].to(param.data.dtype)
+
     def restore(self):
-        """Restores original model parameters from backup."""
         for name, param in self.model.named_parameters():
             if param.requires_grad and name in self.backup:
                 param.data = self.backup[name]
         self.backup = {}
 
-class AdaptiveGradientClipping:
-    """Adaptive Gradient Clipping based on parameter norms"""
-    def __init__(self, clip_factor: float = 0.01, eps: float = 1e-3):
-        self.clip_factor = clip_factor
-        self.eps = eps
-    
-    def __call__(self, model: nn.Module):
-        for param in model.parameters():
-            if param.grad is not None:
-                param_norm = torch.linalg.norm(param.data.detach(), ord=2) # Use param.data
-                grad_norm = torch.linalg.norm(param.grad.detach(), ord=2)
-                
-                max_norm = param_norm * self.clip_factor + self.eps
-                
-                clip_coef = max_norm / (grad_norm + 1e-6)
-                clip_coef_clamped = torch.clamp(clip_coef, max=1.0) # Only clip if grad_norm > max_norm
-                
-                if clip_coef < 1.0: # Only apply if clipping is needed
-                    param.grad.detach().mul_(clip_coef_clamped)
+class FocalLoss(nn.Module):
+    def __init__(self, alpha: float = 0.25, gamma: float = 2.0, reduction: str = 'mean'):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.reduction = reduction
+
+    def forward(self, inputs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        ce_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-ce_loss)
+        focal_loss_val = self.alpha * (1 - pt) ** self.gamma * ce_loss
+        if self.reduction == 'mean':
+            return focal_loss_val.mean()
+        elif self.reduction == 'sum':
+            return focal_loss_val.sum()
+        else:
+            return focal_loss_val
+
+class CombinedLoss(nn.Module):
+    def __init__(self, num_classes: int, smoothing: float = 0.1, focal_alpha: float = 0.25, focal_gamma: float = 2.0,
+                 ce_weight: float = 0.5, focal_weight: float = 0.5, class_weights_tensor: Optional[torch.Tensor] = None):
+        super().__init__()
+        self.ce_weight = ce_weight
+        self.focal_weight = focal_weight
+        self.ce_loss = nn.CrossEntropyLoss(label_smoothing=smoothing, weight=class_weights_tensor)
+        self.focal_loss = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
+
+        # Use the global logger variable if it's set
+        current_logger = logger_main_global if logger_main_global else logging.getLogger(__name__)
+        if abs(ce_weight + focal_weight - 1.0) > 1e-6 and (ce_weight > 0 and focal_weight > 0):
+            current_logger.warning(f"Sum of ce_weight ({ce_weight}) and focal_weight ({focal_weight}) is not 1.0. Losses will be scaled accordingly.")
+
+    def forward(self, inputs, targets):
+        loss = torch.tensor(0.0, device=inputs.device)
+        if self.ce_weight > 0:
+            loss += self.ce_weight * self.ce_loss(inputs, targets)
+        if self.focal_weight > 0:
+            loss += self.focal_weight * self.focal_loss(inputs, targets)
+        return loss
+
+def _get_logger():
+    """Helper to access the module-level logger consistently."""
+    return logger_main_global if logger_main_global else logging.getLogger(__name__)
 
 
-def create_disease_optimized_augmentations(img_size: Tuple[int, int] = (384, 384), is_train: bool = True):
-    """Disease-specific augmentation optimized for cotton leaf diseases"""
-    mean = [0.485, 0.456, 0.406]
-    std = [0.229, 0.224, 0.225]
+def create_weighted_sampler(dataset: SARCLD2024Dataset, cfg: Dict[str,Any]) -> Optional[WeightedRandomSampler]:
+    logger = _get_logger()
+    mode = cfg.get('weighted_sampler_mode', 'inv_count')
+    beta = 0.9999
 
-    if is_train:
-        return A.Compose([
-            A.RandomResizedCrop(height=img_size[0], width=img_size[1], scale=(0.7, 1.0), ratio=(0.8, 1.2), p=1.0),
-            A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.3),
-            A.RandomRotate90(p=0.3),
-            A.Rotate(limit=40, border_mode=0, value=(int(mean[0]*255), int(mean[1]*255), int(mean[2]*255)), p=0.7), # Use mean for border
-            A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=40, border_mode=0, value=(int(mean[0]*255), int(mean[1]*255), int(mean[2]*255)), p=0.7),
-            
-            A.Perspective(scale=(0.05, 0.1), p=0.2),
-            A.ElasticTransform(alpha=1, sigma=30, alpha_affine=30, p=0.2, border_mode=0, value=(int(mean[0]*255), int(mean[1]*255), int(mean[2]*255))),
-            
-            A.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.3, hue=0.15, p=0.8),
-            A.RandomBrightnessContrast(brightness_limit=0.25, contrast_limit=0.25, p=0.8),
-            A.HueSaturationValue(hue_shift_limit=15, sat_shift_limit=25, val_shift_limit=15, p=0.7),
-            A.RGBShift(r_shift_limit=20, g_shift_limit=20, b_shift_limit=20, p=0.4),
-            A.CLAHE(clip_limit=2.0, tile_grid_size=(8, 8), p=0.3),
-            
-            A.OneOf([
-                A.GaussianBlur(blur_limit=(3, 7), p=0.5),
-                A.MotionBlur(blur_limit=5, p=0.5),
-                A.MedianBlur(blur_limit=5, p=0.3),
-            ], p=0.4),
-            
-            A.OneOf([
-                A.GaussNoise(var_limit=(10.0, 40.0), p=0.3),
-                A.ISONoise(color_shift=(0.01, 0.03), intensity=(0.1, 0.3), p=0.3),
-            ], p=0.3),
-            
-            A.CoarseDropout(max_holes=6, max_height=img_size[0]//8, max_width=img_size[1]//8, min_holes=1, 
-                           min_height=img_size[0]//16, min_width=img_size[1]//16, fill_value=mean, p=0.3), # Fill with mean
-            
-            A.Normalize(mean=mean, std=std),
-            ToTensorV2(),
-        ])
-    else: # Validation/Test augmentations
-        return A.Compose([
-            A.Resize(height=img_size[0], width=img_size[1]),
-            A.Normalize(mean=mean, std=std),
-            ToTensorV2(),
-        ])
-
-def load_enhanced_config() -> Dict[str, Any]:
-    """Enhanced configuration for 90%+ accuracy"""
-    return {
-        # Model architecture
-        'model_name': 'disease_aware_hvt_large', # Example variant
-        'num_classes': 8, # Number of disease classes + healthy
-        'img_size': [224, 224], # Initial image size, will be progressively increased
-        'patch_size': 16,
-        'embed_dim': 768, # Corresponds to ViT-Base like models
-        'depth': 12,
-        'num_heads': 12,
-        'mlp_ratio': 4.0,
-        'drop_rate': 0.1,         # Dropout for linear layers
-        'attn_drop_rate': 0.0,    # Dropout for attention
-        'drop_path_rate': 0.2,    # Stochastic depth
-        'layer_scale_init_value': 1e-6, # For LayerScale
-        
-        # Training hyperparameters
-        'epochs': 150, # Adjusted for potentially faster convergence with advanced techniques
-        'batch_size': 16, # Adjust based on GPU memory (e.g., 32, 16, 8)
-        'accumulation_steps': 4,  # Effective batch size = batch_size * accumulation_steps
-        'num_workers': 8, # Adjust based on CPU cores
-        'pin_memory': True,
-        'prefetch_factor': 2, # For DataLoader
-        
-        # Learning rates and scheduling
-        'lr_head': 5e-4,
-        'lr_backbone': 5e-5,
-        'weight_decay': 0.05,
-        'warmup_epochs': 10, # Number of epochs for linear warmup
-        'scheduler_type': 'cosine_warm_restarts', # 'cosine_annealing' or 'cosine_warm_restarts' or 'reduce_on_plateau'
-        'eta_min': 1e-7,      # Min LR for cosine schedulers
-        'T_0': 15,            # For CosineAnnealingWarmRestarts: epochs for first restart
-        'T_mult': 2,          # For CosineAnnealingWarmRestarts: factor to increase T_i after restart
-        'plateau_factor': 0.2, # For ReduceLROnPlateau
-        'plateau_patience': 10, # For ReduceLROnPlateau
-
-        # Loss and optimization
-        'loss_type': 'adaptive_focal', # 'ce', 'focal', 'adaptive_focal', 'label_smoothing'
-        'focal_alpha': [0.73, 1.41, 0.74, 1.34, 0.89, 1.0, 1.17, 0.72], # Example: inverse of class frequencies, tuned
-        'focal_gamma': 2.0,
-        'adaptive_focal_gamma_start': 2.5,
-        'adaptive_focal_gamma_end': 0.5,
-        'label_smoothing_epsilon': 0.15,
-        'optimizer_type': 'adamw', # 'adamw' or 'sgd'
-        'adamw_betas': (0.9, 0.999),
-        'adamw_eps': 1e-8,
-        'sgd_momentum': 0.9,
-        
-        # Regularization and stability
-        'freeze_backbone_epochs': 0, # Number of initial epochs to freeze backbone (0 to disable)
-        'use_sam': True,
-        'sam_rho': 0.05, # SAM neighborhood size
-        'sam_adaptive': True,
-        'clip_grad_norm_value': 1.0, # Max grad norm, set to 0 or None to disable
-        'use_adaptive_grad_clip': True,
-        'agc_clip_factor': 0.01,
-        'agc_eps': 1e-3,
-        'use_ema': True,
-        'ema_decay': 0.9999,
-        'ema_warmup_steps': 2000, # Number of optimizer steps for EMA warmup
-        
-        # Data augmentation
-        'use_advanced_augmentation': True, # Uses create_disease_optimized_augmentations
-        'use_mixup_cutmix': True,
-        'mixup_cutmix_prob': 0.8, # Probability of applying mixup/cutmix
-        'mixup_alpha': 0.4,       # Alpha for mixup beta distribution
-        'cutmix_alpha': 1.0,      # Alpha for cutmix beta distribution
-        
-        # Progressive resizing: epoch -> [height, width]
-        'progressive_resizing': True,
-        'resize_schedule': { 
-            0: [224, 224],    # Start with 224x224
-            # (epochs_total * 1/3): [256, 256], # Example: At 1/3 of training
-            # (epochs_total * 2/3): [384, 384]  # Example: At 2/3 of training
-            # These will be calculated based on total epochs dynamically later
-        },
-        
-        # Test-time augmentation
-        'use_tta': True,
-        'tta_num_augmentations': 10, # Number of TTA views (including original)
-        
-        # Evaluation and saving
-        'eval_every_n_epochs': 1,
-        'save_best_only': True,
-        'early_stopping_patience': 30, # Patience for early stopping
-        'monitor_metric': 'val_f1_score', # 'val_accuracy', 'val_loss', 'val_f1_score'
-        
-        # Hardware optimization
-        'amp_enabled': True,      # Automatic Mixed Precision
-        'compile_model': True,   # PyTorch 2.0+ model compilation
-        'channels_last': True,   # Use channels_last memory format
-        
-        # Dataset paths (MUST BE SET BY USER)
-        'train_dir': 'path/to/your/train_data',
-        'val_dir': 'path/to/your/val_data',
-        'test_dir': 'path/to/your/test_data',
-        'output_dir': './finetune_results',
-        'checkpoint_path': None, # Path to a checkpoint to resume training
-        'pretrained_weights_path': None # Path to pre-trained HVT weights (e.g., from phase 2)
-    }
-
-def create_weighted_sampler(dataset: SARCLD2024Dataset, mode: str = 'effective_number', beta: float = 0.9999) -> WeightedRandomSampler:
-    """Create weighted sampler for imbalanced dataset"""
-    if hasattr(dataset, 'get_targets'): # Assuming dataset has a method to get all targets
+    if not hasattr(dataset, 'get_targets'): 
+        if hasattr(dataset, 'current_split_labels'):
+             targets = np.array(dataset.current_split_labels) 
+             logger.warning("Dataset does not have 'get_targets' method. Using 'current_split_labels' for weighted sampler. Ensure this is appropriate for the split.")
+        else:
+            logger.warning("Dataset does not have 'get_targets' or 'current_split_labels' method. Cannot create weighted sampler.")
+            return None
+    else:
         targets = np.array(dataset.get_targets())
-    else: # Fallback: iterate through dataset (slower)
-        logger.warning("Dataset does not have 'get_targets' method. Iterating to get targets for sampler (can be slow).")
-        targets = []
-        # This can be very slow for large datasets, ensure SARCLD2024Dataset implements get_targets()
-        for i in range(len(dataset)): 
-            try:
-                _, target = dataset[i] # Assuming dataset returns (image, target)
-                if isinstance(target, torch.Tensor): target = target.item()
-                targets.append(target)
-            except Exception as e:
-                logger.error(f"Error getting target for sample {i} for weighted sampler: {e}")
-                # Fallback to assuming balanced if targets cannot be fetched
-                return WeightedRandomSampler(weights=torch.ones(len(dataset)), num_samples=len(dataset), replacement=True)
-
-        targets = np.array(targets)
 
     if len(targets) == 0:
-        logger.warning("No targets found for weighted sampler. Using uniform sampling.")
-        return WeightedRandomSampler(weights=torch.ones(len(dataset)), num_samples=len(dataset), replacement=True)
+        logger.warning("No targets found for weighted sampler.")
+        return None
 
-    class_counts = np.bincount(targets, minlength=dataset.num_classes if hasattr(dataset, 'num_classes') else np.max(targets) + 1)
-    
-    # Avoid division by zero for classes not present in the dataset subset
-    class_counts = np.maximum(class_counts, 1e-9) 
+    num_classes_ds = dataset.num_classes if hasattr(dataset, 'num_classes') else (np.max(targets) + 1)
+    class_counts = np.bincount(targets, minlength=num_classes_ds)
+    class_counts = np.maximum(class_counts, 1e-9)
 
-    if mode == 'inverse_frequency':
-        weights_per_class = 1.0 / class_counts
+    weights_per_class: np.ndarray
+    if mode == 'inv_count': weights_per_class = 1.0 / class_counts
     elif mode == 'effective_number':
         effective_num = 1.0 - np.power(beta, class_counts)
         weights_per_class = (1.0 - beta) / effective_num
-    else: # uniform
+    else:
+        logger.warning(f"Unknown sampler mode: {mode}. Using uniform sampling weights.")
         weights_per_class = np.ones_like(class_counts, dtype=np.float32)
-    
-    weights_per_class = weights_per_class / np.sum(weights_per_class) # Normalize
-    
+
+    weights_per_class = weights_per_class / np.sum(weights_per_class)
     sample_weights = weights_per_class[targets]
-    
-    sampler = WeightedRandomSampler(
-        weights=torch.from_numpy(sample_weights).double(), 
-        num_samples=len(sample_weights), 
-        replacement=True
-    )
-    
+    sampler = WeightedRandomSampler(weights=torch.from_numpy(sample_weights).double(), num_samples=len(sample_weights), replacement=True)
+    logger.info(f"WeightedRandomSampler created with mode: {mode}.")
     return sampler
 
-def mixup_cutmix_criterion(criterion, pred, y_a, y_b, lam):
-    """MixUp/CutMix loss calculation"""
-    return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
-
-def test_time_augmentation(model: nn.Module, image: torch.Tensor, device: torch.device, num_augmentations: int = 10) -> torch.Tensor:
-    """Advanced Test Time Augmentation for a single image or a batch.
-       Returns averaged softmax probabilities.
-    """
-    model.eval() # Ensure model is in eval mode
-
-    # Define TTA transforms (applied on tensor directly)
-    # These are simpler than training augmentations
-    tta_transforms_list = [
-        lambda x: x, # Original
-        lambda x: TF.hflip(x),
-        lambda x: TF.vflip(x),
-        lambda x: TF.rotate(x, degrees=15),
-        lambda x: TF.rotate(x, degrees=-15),
-    ]
-    # Can add more complex ones like small crops, color jitters if needed
-    # For color jitter, ensure it's applied carefully if images are already normalized
-    # E.g., denormalize, jitter, re-normalize or use kornia for tensor-based color jitter
-
-    if image.ndim == 3: # Single image C, H, W
-        image = image.unsqueeze(0) # Add batch dimension B, C, H, W
-
-    all_outputs = []
+def get_class_weights_for_loss(dataset: SARCLD2024Dataset, device: torch.device, cfg: Dict[str,Any]) -> Optional[torch.Tensor]:
+    logger = _get_logger()
+    if not cfg.get('use_weighted_loss', False): return None
     
-    with torch.no_grad(), autocast(enabled=True): # Assuming AMP might be used
-        # Original image
-        all_outputs.append(model(image.to(device)))
-
-        # Augmented images
-        # Ensure num_augmentations does not exceed available unique transforms if they are few
-        for i in range(1, num_augmentations):
-            idx = i % len(tta_transforms_list) # Cycle through transforms
-            if idx == 0 and i >= len(tta_transforms_list): # Avoid re-doing original if num_augs > len(transforms)
-                 # Apply a combination or a slightly varied transform
-                 combined_img = TF.hflip(TF.rotate(image, degrees=5 * (i // len(tta_transforms_list))))
-                 all_outputs.append(model(combined_img.to(device)))
-                 continue
-
-            aug_image = tta_transforms_list[idx](image)
-            all_outputs.append(model(aug_image.to(device)))
-            
-    # Average softmax probabilities
-    avg_probs = torch.stack([F.softmax(out, dim=1) for out in all_outputs]).mean(dim=0)
-    return avg_probs
-
-
-def progressive_unfreezing(model: nn.Module, epoch: int, total_epochs: int, cfg: Dict[str, Any]):
-    """Progressive unfreezing strategy for HVT based on layers."""
-    # HVT typically has 'patch_embed', 'blocks' (layers), 'norm', 'head'
-    num_layers = cfg.get('depth', 12) # model.depth if available
-    freeze_backbone_epochs = cfg.get('freeze_backbone_epochs', 0)
-
-    if freeze_backbone_epochs == 0: # No unfreezing schedule, all trainable from start (or based on pretraining)
-        if epoch == 0: logger.info("Progressive unfreezing disabled or freeze_backbone_epochs is 0.")
-        return
-
-    if epoch == 0: # Initial freeze if specified
-        logger.info(f"Progressive unfreezing: Initially freezing backbone for {freeze_backbone_epochs} epochs.")
-        for name, param in model.named_parameters():
-            if not ('head' in name or 'classifier' in name):
-                param.requires_grad = False
-            else:
-                param.requires_grad = True # Ensure head is trainable
-        return
-
-    # Determine unfreezing stages, e.g., 3 stages within freeze_backbone_epochs
-    # Stage 1: Unfreeze last 1/3 of layers
-    # Stage 2: Unfreeze last 2/3 of layers
-    # Stage 3: Unfreeze all backbone layers
-    
-    layers_to_unfreeze_increment = num_layers // 3 # Example: unfreeze in 3 steps
-    
-    if epoch < freeze_backbone_epochs * (1/3):
-        # Only head is trainable (already set)
-        pass
-    elif epoch < freeze_backbone_epochs * (2/3):
-        # Unfreeze top 1/3 of blocks
-        layers_to_thaw = range(num_layers - layers_to_unfreeze_increment, num_layers)
-        if epoch == int(freeze_backbone_epochs * (1/3)): logger.info(f"Unfreezing layers: {list(layers_to_thaw)}")
-        for i in layers_to_thaw:
-            if hasattr(model, 'blocks') and i < len(model.blocks):
-                for param in model.blocks[i].parameters():
-                    param.requires_grad = True
-        if hasattr(model, 'norm'): # Unfreeze final norm layer
-            for param in model.norm.parameters():
-                param.requires_grad = True
-    elif epoch < freeze_backbone_epochs:
-        # Unfreeze top 2/3 of blocks
-        layers_to_thaw = range(num_layers - 2 * layers_to_unfreeze_increment, num_layers)
-        if epoch == int(freeze_backbone_epochs * (2/3)): logger.info(f"Unfreezing layers: {list(layers_to_thaw)}")
-        for i in layers_to_thaw:
-            if hasattr(model, 'blocks') and i < len(model.blocks):
-                for param in model.blocks[i].parameters():
-                    param.requires_grad = True
-    elif epoch >= freeze_backbone_epochs:
-        if epoch == freeze_backbone_epochs : logger.info("Unfreezing all backbone layers.")
-        for name, param in model.named_parameters():
-            param.requires_grad = True # Unfreeze everything
-
-    # Log trainable parameters
-    if epoch in [0, int(freeze_backbone_epochs * (1/3)), int(freeze_backbone_epochs * (2/3)), freeze_backbone_epochs]:
-        num_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        logger.info(f"Epoch {epoch}: Number of trainable parameters: {num_trainable}")
-
-
-def calculate_metrics(predictions: torch.Tensor, targets: torch.Tensor, num_classes: int = 8, class_names: Optional[List[str]] = None) -> Dict:
-    """Calculate comprehensive metrics including per-class and confusion matrix."""
-    if predictions.ndim == 2: # Softmax outputs
-        pred_labels = predictions.argmax(dim=1)
-    else: # Already class indices
-        pred_labels = predictions
-    
-    targets_cpu = targets.cpu().numpy()
-    pred_labels_cpu = pred_labels.cpu().numpy()
-    
-    accuracy = accuracy_score(targets_cpu, pred_labels_cpu)
-    precision_w, recall_w, f1_w, _ = precision_recall_fscore_support(
-        targets_cpu, pred_labels_cpu, average='weighted', zero_division=0
-    )
-    precision_m, recall_m, f1_m, _ = precision_recall_fscore_support(
-        targets_cpu, pred_labels_cpu, average='macro', zero_division=0
-    )
-    
-    # Per-class metrics
-    per_class_precision, per_class_recall, per_class_f1, per_class_support = precision_recall_fscore_support(
-        targets_cpu, pred_labels_cpu, average=None, zero_division=0, labels=list(range(num_classes))
-    )
-    
-    cm = confusion_matrix(targets_cpu, pred_labels_cpu, labels=list(range(num_classes)))
-    
-    metrics_dict = {
-        'accuracy': accuracy,
-        'precision_weighted': precision_w,
-        'recall_weighted': recall_w,
-        'f1_score_weighted': f1_w,
-        'precision_macro': precision_m,
-        'recall_macro': recall_m,
-        'f1_score_macro': f1_m,
-        'confusion_matrix': cm
-    }
-    
-    if class_names is None:
-        class_names = [f"Class_{i}" for i in range(num_classes)]
-    
-    for i, name in enumerate(class_names):
-        metrics_dict[f'{name}_precision'] = per_class_precision[i]
-        metrics_dict[f'{name}_recall'] = per_class_recall[i]
-        metrics_dict[f'{name}_f1_score'] = per_class_f1[i]
-        metrics_dict[f'{name}_support'] = per_class_support[i]
-        
-    return metrics_dict
-
-def plot_confusion_matrix(cm: np.ndarray, class_names: List[str], output_path: str):
-    plt.figure(figsize=(12, 10))
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names)
-    plt.xlabel('Predicted Labels')
-    plt.ylabel('True Labels')
-    plt.title('Confusion Matrix')
-    plt.savefig(os.path.join(output_path, "confusion_matrix.png"))
-    plt.close()
-
-def plot_training_curves(history: Dict[str, List[float]], output_path: str):
-    epochs = range(1, len(history['train_loss']) + 1)
-    
-    plt.figure(figsize=(12, 8))
-    
-    # Plot Loss
-    plt.subplot(2, 2, 1)
-    plt.plot(epochs, history['train_loss'], 'bo-', label='Training Loss')
-    plt.plot(epochs, history['val_loss'], 'ro-', label='Validation Loss')
-    plt.title('Training and Validation Loss')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    
-    # Plot Accuracy
-    plt.subplot(2, 2, 2)
-    plt.plot(epochs, history['train_accuracy'], 'bo-', label='Training Accuracy')
-    plt.plot(epochs, history['val_accuracy'], 'ro-', label='Validation Accuracy')
-    plt.title('Training and Validation Accuracy')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-
-    # Plot F1-score
-    plt.subplot(2, 2, 3)
-    plt.plot(epochs, history['train_f1_score'], 'bo-', label='Training F1 (Weighted)')
-    plt.plot(epochs, history['val_f1_score'], 'ro-', label='Validation F1 (Weighted)')
-    plt.title('Training and Validation F1 Score')
-    plt.xlabel('Epochs')
-    plt.ylabel('F1 Score')
-    plt.legend()
-    
-    plt.tight_layout()
-    plt.savefig(os.path.join(output_path, "training_curves.png"))
-    plt.close()
-
-
-def setup_model_optimizer_scheduler(cfg: Dict[str, Any], device: torch.device, num_classes: int, current_epoch: int = 0, total_steps_per_epoch: Optional[int] = None) -> Tuple:
-    """Setup model, optimizer, and schedulers"""
-    
-    model = create_disease_aware_hvt(
-        img_size=cfg['img_size'], # current img_size
-        patch_size=cfg['patch_size'],
-        num_classes=num_classes,
-        embed_dim=cfg['embed_dim'],
-        depth=cfg['depth'],
-        num_heads=cfg['num_heads'],
-        mlp_ratio=cfg['mlp_ratio'],
-        drop_rate=cfg['drop_rate'],
-        attn_drop_rate=cfg.get('attn_drop_rate', 0.0), # Added from config example
-        drop_path_rate=cfg['drop_path_rate'],
-        use_layer_scale=cfg.get('layer_scale_init_value', 0.0) > 0, # Enable if init_value > 0
-        layer_scale_init_value=cfg.get('layer_scale_init_value', 1e-6),
-    )
-
-    # Load pretrained weights if specified (e.g., from Phase 2)
-    if cfg.get('pretrained_weights_path') and os.path.exists(cfg['pretrained_weights_path']):
-        logger.info(f"Loading pretrained weights from: {cfg['pretrained_weights_path']}")
-        checkpoint = torch.load(cfg['pretrained_weights_path'], map_location='cpu')
-        # Adjust state_dict loading based on how weights are saved (e.g. 'model' key, prefix)
-        state_dict = checkpoint.get('model_state_dict', checkpoint.get('model', checkpoint))
-        
-        # Handle potential mismatch in classifier due to num_classes change
-        # For ViT, classifier is often 'head.weight' and 'head.bias'
-        if 'head.weight' in state_dict and state_dict['head.weight'].shape[0] != num_classes:
-            logger.warning("Pretrained head num_classes mismatch. Re-initializing head.")
-            del state_dict['head.weight']
-            if 'head.bias' in state_dict: del state_dict['head.bias']
-        
-        # Filter out non-matching keys (e.g., related to image size if pos_embed is not interpolated)
-        model.load_state_dict(state_dict, strict=False)
-        logger.info("Pretrained weights loaded successfully (strict=False).")
-    
-    model = model.to(device)
-    
-    if cfg.get('channels_last', True):
-        model = model.to(memory_format=torch.channels_last)
-    
-    if cfg.get('compile_model', True) and hasattr(torch, 'compile'):
-        try:
-            logger.info("Compiling model with torch.compile()...")
-            model = torch.compile(model, mode='max-autotune') # or 'reduce-overhead'
-        except Exception as e:
-            logger.warning(f"Model compilation failed: {e}. Continuing without compilation.")
-    
-    # Optimizer setup
-    head_params = []
-    backbone_params = []
-    no_decay_params = [] # For params like biases, LayerNorm weights
-
-    # Typically, biases and LayerNorm/BatchNorm weights are not decayed
-    param_names_no_decay = ['bias', 'LayerNorm.weight', 'norm.weight']
-
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-        
-        is_no_decay = any(nd in name for nd in param_names_no_decay)
-        
-        if 'head' in name or 'classifier' in name:
-            if is_no_decay:
-                no_decay_params.append(param)
-            else:
-                head_params.append(param)
+    if hasattr(dataset, 'get_class_weights') and callable(getattr(dataset, 'get_class_weights')):
+        weights = dataset.get_class_weights()
+        if weights is not None:
+            logger.info(f"Using class weights for loss from dataset.get_class_weights(): {weights.numpy()}")
+            return weights.to(device)
         else:
-            if is_no_decay:
-                no_decay_params.append(param)
-            else:
-                backbone_params.append(param)
-    
-    optimizer_grouped_parameters = [
-        {'params': head_params, 'lr': cfg['lr_head'], 'weight_decay': cfg['weight_decay']},
-        {'params': backbone_params, 'lr': cfg['lr_backbone'], 'weight_decay': cfg['weight_decay']},
-        {'params': no_decay_params, 'lr': max(cfg['lr_head'], cfg['lr_backbone']), 'weight_decay': 0.0} # No decay for these
-    ]
-    
-    base_optimizer_cls = None
-    optimizer_kwargs = {}
-
-    if cfg['optimizer_type'].lower() == 'adamw':
-        base_optimizer_cls = AdamW
-        optimizer_kwargs = {
-            'betas': cfg['adamw_betas'],
-            'eps': cfg['adamw_eps'],
-            # weight_decay is per-group now
-        }
-    elif cfg['optimizer_type'].lower() == 'sgd':
-        base_optimizer_cls = SGD
-        optimizer_kwargs = {
-            'momentum': cfg['sgd_momentum'],
-            'nesterov': True, # Typically good with SGD
-            # weight_decay is per-group now
-        }
-    else:
-        raise ValueError(f"Unsupported optimizer_type: {cfg['optimizer_type']}")
-
-    if cfg.get('use_sam', True):
-        logger.info("Using SAM optimizer.")
-        optimizer = SAM(
-            optimizer_grouped_parameters, # Pass param groups directly
-            base_optimizer_cls, 
-            rho=cfg['sam_rho'], 
-            adaptive=cfg['sam_adaptive'],
-            **optimizer_kwargs # Pass base optimizer args here
-        )
-    else:
-        optimizer = base_optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
-
-    # Scheduler setup
-    scheduler = None
-    if total_steps_per_epoch is None and cfg['scheduler_type'] != 'reduce_on_plateau':
-        logger.warning("total_steps_per_epoch not provided for scheduler setup. Some schedulers might not work optimally.")
-        # Estimate if needed, or ensure it's passed. For now, let's assume it's available for relevant schedulers.
-        
-    total_training_steps = cfg['epochs'] * total_steps_per_epoch if total_steps_per_epoch else cfg['epochs']
-    warmup_steps = cfg['warmup_epochs'] * total_steps_per_epoch if total_steps_per_epoch else cfg['warmup_epochs']
-
-    if cfg['scheduler_type'] == 'cosine_annealing':
-        main_scheduler = CosineAnnealingLR(optimizer, T_max=total_training_steps - warmup_steps, eta_min=cfg['eta_min'])
-    elif cfg['scheduler_type'] == 'cosine_warm_restarts':
-        main_scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=cfg['T_0'] * total_steps_per_epoch if total_steps_per_epoch else cfg['T_0'],
-                                                     T_mult=cfg['T_mult'], eta_min=cfg['eta_min'])
-    elif cfg['scheduler_type'] == 'reduce_on_plateau':
-        # This scheduler is step_every_epoch=True
-        scheduler = ReduceLROnPlateau(optimizer, mode='max' if 'accuracy' in cfg['monitor_metric'] or 'f1' in cfg['monitor_metric'] else 'min',
-                                      factor=cfg['plateau_factor'], patience=cfg['plateau_patience'], verbose=True)
-    else: # Default to cosine_annealing if type is unknown
-        logger.warning(f"Unknown scheduler_type: {cfg['scheduler_type']}. Defaulting to CosineAnnealingLR.")
-        main_scheduler = CosineAnnealingLR(optimizer, T_max=total_training_steps - warmup_steps, eta_min=cfg['eta_min'])
-
-    if cfg['scheduler_type'] != 'reduce_on_plateau': # ReduceLROnPlateau doesn't mix well with warmup typically
-        if warmup_steps > 0 :
-            warmup_scheduler = LinearLR(optimizer, start_factor=1e-6, end_factor=1.0, total_iters=warmup_steps)
-            scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_steps])
+            logger.warning("dataset.get_class_weights() returned None. Cannot use for loss.")
+            return None
+    else: 
+        logger.warning("Dataset does not have a suitable 'get_class_weights' method. Attempting manual calculation for class_weights for loss. Ensure 'current_split_labels' is representative.")
+        if hasattr(dataset, 'current_split_labels'):
+            targets = np.array(dataset.current_split_labels)
         else:
-            scheduler = main_scheduler
-            
-    # If resuming, try to load optimizer and scheduler states
-    if cfg.get('checkpoint_path') and os.path.exists(cfg['checkpoint_path']):
-        checkpoint = torch.load(cfg['checkpoint_path'], map_location=device)
-        if 'optimizer_state_dict' in checkpoint:
-            try:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                logger.info("Optimizer state loaded from checkpoint.")
-            except Exception as e:
-                logger.warning(f"Could not load optimizer state: {e}. Initializing fresh optimizer state.")
-        if 'scheduler_state_dict' in checkpoint and scheduler is not None:
-            try:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-                logger.info("Scheduler state loaded from checkpoint.")
-            except Exception as e:
-                logger.warning(f"Could not load scheduler state: {e}. Initializing fresh scheduler state.")
-        # current_epoch will be updated outside based on checkpoint
+            logger.warning("Dataset does not have 'current_split_labels'. Cannot calculate class weights for loss.")
+            return None
 
-    return model, optimizer, scheduler
+    if len(targets) == 0:
+        logger.warning("No targets found for class_weights.")
+        return None
+    num_classes_ds = dataset.num_classes if hasattr(dataset, 'num_classes') else (np.max(targets) + 1)
+    class_counts = np.bincount(targets, minlength=num_classes_ds)
+    weights_val = 1.0 / (class_counts + 1e-6) 
+    weights_val = weights_val / np.sum(weights_val) * num_classes_ds 
+    logger.info(f"Calculated class weights for loss manually: {weights_val}")
+    return torch.tensor(weights_val, dtype=torch.float32).to(device)
 
 
-def train_one_epoch(model, dataloader, optimizer, criterion, device, scaler, cfg, epoch_num,
-                    mixup_cutmix_fn=None, agc_fn=None, adaptive_loss=None):
-    model.train()
-    total_loss = 0.0
-    all_preds = []
-    all_targets = []
-    
-    optimizer.zero_grad() # Initialize gradients for accumulation
-
-    for batch_idx, (images, targets) in enumerate(dataloader):
-        images, targets = images.to(device), targets.to(device)
-
-        # Apply channels_last if model expects it
-        if cfg.get('channels_last', True):
-            images = images.to(memory_format=torch.channels_last)
-
-        mixed_images, targets_a, targets_b, lam, is_mixed = images, targets, targets, 1.0, False
-        if mixup_cutmix_fn and cfg.get('use_mixup_cutmix', False):
-            mixed_images, targets_a, targets_b, lam, is_mixed = mixup_cutmix_fn(images, targets)
-            
-        def closure(): # For SAM optimizer
-            output = model(mixed_images)
-            if is_mixed:
-                loss = mixup_cutmix_criterion(criterion, output, targets_a, targets_b, lam)
-            else:
-                loss = criterion(output, targets)
-            loss = loss / cfg['accumulation_steps'] # Normalize loss for accumulation
-            return loss, output
-
-        if cfg.get('use_sam', True):
-            # SAM requires two forward/backward passes
-            with autocast(enabled=cfg['amp_enabled']):
-                loss, outputs = closure() # Calculate loss for first step (perturbation)
-            
-            scaler.scale(loss).backward() # Grad for perturbation
-            scaler.unscale_(optimizer) # Unscale before SAM's first step grad norm
-            optimizer.first_step(zero_grad=False) # Perturb weights, SAM handles its own zero_grad based on its logic
-                                                 # but we handle gradient accumulation zero_grad outside loop
-
-            # Second forward/backward pass on perturbed weights
-            with autocast(enabled=cfg['amp_enabled']):
-                loss, outputs = closure() # This is L_S(w + e(w))
-            
-            scaler.scale(loss).backward() # Grad for descent step
-            # Optimizer step will be done after accumulation
-        else: # Standard optimizer
-            with autocast(enabled=cfg['amp_enabled']):
-                outputs = model(mixed_images)
-                if is_mixed:
-                    loss = mixup_cutmix_criterion(criterion, outputs, targets_a, targets_b, lam)
-                else:
-                    loss = criterion(outputs, targets)
-                loss = loss / cfg['accumulation_steps']
-            
-            scaler.scale(loss).backward()
-
-        # Gradient accumulation
-        if (batch_idx + 1) % cfg['accumulation_steps'] == 0 or (batch_idx + 1) == len(dataloader):
-            scaler.unscale_(optimizer) # Unscale before clipping and step
-
-            if cfg.get('clip_grad_norm_value', 0) and cfg['clip_grad_norm_value'] > 0:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), cfg['clip_grad_norm_value'])
-            if agc_fn and cfg.get('use_adaptive_grad_clip', False):
-                agc_fn(model)
-
-            if cfg.get('use_sam', True):
-                optimizer.second_step(zero_grad=False) # SAM's second step performs the actual update
-            else:
-                scaler.step(optimizer) # Standard optimizer step
-            
-            scaler.update()
-            optimizer.zero_grad() # Zero gradients for the next accumulation cycle
-
-        total_loss += loss.item() * cfg['accumulation_steps'] # De-normalize for logging
-        
-        all_preds.append(outputs.detach())
-        all_targets.append(targets_a.detach()) # Use targets_a for metrics if mixed
-
-    avg_loss = total_loss / len(dataloader)
-    
-    # Calculate metrics for the epoch
-    all_preds = torch.cat(all_preds)
-    all_targets = torch.cat(all_targets)
-    
-    # If adaptive loss, update based on training accuracy (or other metric)
-    # However, it's often better to update based on validation metrics.
-    # For now, let's assume it's updated after validation.
-
-    epoch_metrics = calculate_metrics(all_preds, all_targets, num_classes=cfg['num_classes'])
-    return avg_loss, epoch_metrics
-
-
-def validate_one_epoch(model, dataloader, criterion, device, cfg, ema_model=None):
-    eval_model = ema_model if ema_model and cfg.get('use_ema', False) else model
-    if ema_model and cfg.get('use_ema', False):
-        ema_model.apply_shadow() # Use EMA weights for validation
-    
-    eval_model.eval()
-    total_loss = 0.0
-    all_preds = []
-    all_targets = []
-
-    with torch.no_grad():
-        for images, targets in dataloader:
-            images, targets = images.to(device), targets.to(device)
-            if cfg.get('channels_last', True) and eval_model is model: # EMA model might not be compiled/channels_last
-                 images = images.to(memory_format=torch.channels_last)
-
-            with autocast(enabled=cfg['amp_enabled']):
-                if cfg.get('use_tta', False) and eval_model is model : # TTA typically not with EMA shadow directly unless EMA shadow is a full model object
-                    outputs_probs = test_time_augmentation(eval_model, images, device, num_augmentations=cfg['tta_num_augmentations'])
-                    # TTA returns probabilities, need to convert to logits for some loss fns or use a prob-based loss
-                    # For simplicity with CE/Focal, let's get argmax if criterion expects logits.
-                    # Or, if criterion can handle probs (e.g. custom NLLLoss), use that.
-                    # A simpler TTA is to average logits then softmax. test_time_augmentation returns avg softmax.
-                    # So, use a dummy loss or skip loss calculation for TTA validation if too complex.
-                    # For now, let's assume loss is based on non-TTA single pass for val_loss, TTA for metrics.
-                    # For simplicity in this loop, TTA will be for final test, not every validation.
-                    # Reverting to standard validation for simplicity:
-                    outputs = eval_model(images)
-                else:
-                    outputs = eval_model(images)
-
-                loss = criterion(outputs, targets)
-            
-            total_loss += loss.item()
-            all_preds.append(outputs)
-            all_targets.append(targets)
-
-    if ema_model and cfg.get('use_ema', False):
-        ema_model.restore() # Restore original model weights
-
-    avg_loss = total_loss / len(dataloader)
-    all_preds = torch.cat(all_preds)
-    all_targets = torch.cat(all_targets)
-    
-    epoch_metrics = calculate_metrics(all_preds, all_targets, num_classes=cfg['num_classes'])
-    return avg_loss, epoch_metrics
-
-
-def get_data_loaders(cfg: Dict[str, Any], current_img_size: Tuple[int, int], class_names: Optional[List[str]] = None) -> Tuple[Optional[DataLoader], Optional[DataLoader], Optional[DataLoader]]:
-    """Creates and returns train, validation, and test DataLoaders."""
+def get_data_loaders(cfg: Dict[str, Any], current_img_size: Tuple[int, int], class_names: Optional[List[str]] = None, dataset_base_path: Optional[str]=None) -> Tuple[Optional[DataLoader], Optional[DataLoader], Optional[DataLoader]]:
+    logger = _get_logger()
     logger.info(f"Creating DataLoaders with image size: {current_img_size}")
-    
-    train_transform = create_disease_optimized_augmentations(img_size=current_img_size, is_train=True)
-    val_test_transform = create_disease_optimized_augmentations(img_size=current_img_size, is_train=False)
+    logger.info("SARCLD2024Dataset will use its internal base transforms. External train_aug_obj/eval_transform are not passed to its constructor.")
 
-    # Dataset paths should be set in config
-    if not os.path.isdir(cfg['train_dir']) or not os.path.isdir(cfg['val_dir']):
-        logger.error(f"Train directory ({cfg['train_dir']}) or Val directory ({cfg['val_dir']}) not found. Please check config.")
-        # For dataset instantiation, SARCLD2024Dataset needs to be defined or imported correctly.
-        # Assuming it takes (root_dir, transform, num_classes (optional), class_names (optional))
-        # Let's create dummy datasets if paths are invalid to allow code to run for structure checking.
-        # Replace with actual dataset instantiation.
-        # Example: SARCLD2024Dataset(root_dir=cfg['train_dir'], transform=train_transform, img_size=current_img_size)
-        raise FileNotFoundError("Dataset directories not found. Please set 'train_dir' and 'val_dir' in config.")
+    _DATA_ROOT = dataset_base_path if dataset_base_path else cfg['data_root']
+    actual_dataset_path = _DATA_ROOT 
+
+    if not os.path.isdir(actual_dataset_path): 
+        logger.error(f"Dataset root path not found: {actual_dataset_path}")
+        raise FileNotFoundError(f"Dataset root path not found: {actual_dataset_path}")
 
     try:
-        train_dataset = SARCLD2024Dataset(root_dir=cfg['train_dir'], transform=train_transform, img_size=current_img_size, class_names=class_names)
-        val_dataset = SARCLD2024Dataset(root_dir=cfg['val_dir'], transform=val_test_transform, img_size=current_img_size, class_names=class_names)
+        common_ds_args = {
+            'img_size': current_img_size,
+            'train_split_ratio': cfg.get('train_split_ratio', 0.8),
+            'original_dataset_name': cfg.get('original_dataset_name'),
+            'augmented_dataset_name': cfg.get('augmented_dataset_name'),
+            'random_seed': cfg.get('seed')
+        }
+
+        train_dataset_args = {
+            'root_dir': actual_dataset_path,
+            'split': 'train',
+            **common_ds_args
+        }
+        logger.info(f"Arguments for Train SARCLD2024Dataset: {train_dataset_args}")
+        train_dataset = SARCLD2024Dataset(**train_dataset_args)
+        
+        val_dataset_args = {
+            'root_dir': actual_dataset_path,
+            'split': 'val',
+            **common_ds_args
+        }
+        logger.info(f"Arguments for Validation SARCLD2024Dataset: {val_dataset_args}")
+        val_dataset = SARCLD2024Dataset(**val_dataset_args)
         
         test_dataset = None
-        if os.path.isdir(cfg.get('test_dir', '')):
-            test_dataset = SARCLD2024Dataset(root_dir=cfg['test_dir'], transform=val_test_transform, img_size=current_img_size, class_names=class_names)
-        else:
-            logger.warning(f"Test directory ({cfg.get('test_dir', '')}) not found. Test loader will not be created.")
-
-    except NameError: # SARCLD2024Dataset not defined
-        logger.error("SARCLD2024Dataset class not found. Please ensure it's correctly defined and imported.")
+        try:
+            test_dataset_args = {
+                'root_dir': actual_dataset_path,
+                'split': 'test', 
+                **common_ds_args
+            }
+            logger.info(f"Arguments for Test SARCLD2024Dataset: {test_dataset_args}")
+            test_dataset = SARCLD2024Dataset(**test_dataset_args)
+        except Exception as e_test_ds: logger.warning(f"Could not create test dataset: {e_test_ds}")
+    except TypeError as e_type:
+        logger.error(f"TypeError during dataset instantiation: {e_type}. "
+                     f"This usually means an argument mismatch between main.py and SARCLD2024Dataset.__init__ in dataset.py. "
+                     f"Please ensure your active dataset.py script matches the expected arguments being passed (logged above).")
         raise
     except Exception as e:
-        logger.error(f"Error creating datasets: {e}")
+        logger.error(f"Error creating datasets: {e}. Check SARCLD2024Dataset arguments and paths.")
         raise
 
-    train_sampler = None
-    if len(train_dataset) > 0: # Only create sampler if dataset is not empty
-        # Weighted sampler for imbalanced datasets
-        # Ensure SARCLD2024Dataset has a get_targets() method or similar for this to work efficiently
-        if not hasattr(train_dataset, 'get_targets'):
-            logger.warning("train_dataset does not have get_targets(). WeightedRandomSampler might be slow or inaccurate.")
-        try:
-            train_sampler = create_weighted_sampler(train_dataset)
-            logger.info("Using WeightedRandomSampler for training.")
-        except Exception as e:
-            logger.warning(f"Failed to create weighted sampler: {e}. Using default sampler.")
-            train_sampler = None # Fallback to default shuffle
+    train_sampler = create_weighted_sampler(train_dataset, cfg) if cfg.get('use_weighted_sampler', False) and train_dataset and len(train_dataset) > 0 else None
     
-    train_loader = DataLoader(
-        train_dataset, batch_size=cfg['batch_size'], shuffle=(train_sampler is None),
-        num_workers=cfg['num_workers'], pin_memory=cfg['pin_memory'], sampler=train_sampler,
-        prefetch_factor=cfg.get('prefetch_factor', 2) if cfg['num_workers'] > 0 else None,
-        drop_last=True # Often beneficial for stability, esp. with SAM or BatchNorm
-    ) if len(train_dataset) > 0 else None
-    
-    val_loader = DataLoader(
-        val_dataset, batch_size=cfg['batch_size'] * 2, # Often can use larger batch for validation
-        shuffle=False, num_workers=cfg['num_workers'], pin_memory=cfg['pin_memory'],
-        prefetch_factor=cfg.get('prefetch_factor', 2) if cfg['num_workers'] > 0 else None
-    ) if len(val_dataset) > 0 else None
+    num_workers = cfg.get('num_workers', 0)
+    pin_memory = cfg['device'] == 'cuda'
+    prefetch_factor = cfg.get('prefetch_factor') if num_workers > 0 else None
 
-    test_loader = None
-    if test_dataset and len(test_dataset) > 0:
-        test_loader = DataLoader(
-            test_dataset, batch_size=cfg['batch_size'] * 2, shuffle=False,
-            num_workers=cfg['num_workers'], pin_memory=cfg['pin_memory'],
-            prefetch_factor=cfg.get('prefetch_factor', 2) if cfg['num_workers'] > 0 else None
-        )
-    
+    train_loader = DataLoader(train_dataset, batch_size=cfg['batch_size'], shuffle=(train_sampler is None), num_workers=num_workers, pin_memory=pin_memory, sampler=train_sampler, prefetch_factor=prefetch_factor, drop_last=True) if train_dataset and len(train_dataset) > 0 else None
+    val_loader = DataLoader(val_dataset, batch_size=cfg['batch_size'] * 2, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor) if val_dataset and len(val_dataset) > 0 else None
+    test_loader = DataLoader(test_dataset, batch_size=cfg['batch_size'] * 2, shuffle=False, num_workers=num_workers, pin_memory=pin_memory, prefetch_factor=prefetch_factor) if test_dataset and len(test_dataset) > 0 else None
     return train_loader, val_loader, test_loader
 
+def get_optimizer_param_groups(model: nn.Module, cfg: Dict[str, Any]):
+    logger = _get_logger()
+    weight_decay = cfg.get('weight_decay', 0.01)
+    default_max_lr_for_onecycle = cfg.get('onecycle_max_lr', 1e-3)
+    param_groups = []
 
-def main(cfg_path: Optional[str] = None):
-    global logger 
-    
-    # --- Setup ---
-    if cfg_path:
-        with open(cfg_path, 'r') as f:
-            user_cfg = yaml.safe_load(f)
-        base_cfg = load_enhanced_config()
-        # Deep merge user_cfg into base_cfg (user_cfg takes precedence)
-        # This simple update is shallow; for deep merge, a utility is needed.
-        # For now, assume user_cfg might overwrite entire dict keys like 'resize_schedule'.
-        base_cfg.update(user_cfg) 
-        cfg = base_cfg
+    if cfg.get('use_layer_wise_lr', False) and 'layer_wise_lr_multipliers' in cfg:
+        logger.info("Using layer-wise LR multipliers.")
+        multipliers = cfg['layer_wise_lr_multipliers']
+        hvt_depths_config = cfg.get('hvt_params_for_model_init', {}).get('depths', [])
+        num_total_blocks_from_depths = sum(hvt_depths_config) if isinstance(hvt_depths_config, list) else 12
+
+        param_name_to_group_key = { 'patch_embed': 'layer_1' }
+        if num_total_blocks_from_depths > 0:
+            q1, q2, q3 = num_total_blocks_from_depths // 4, num_total_blocks_from_depths // 2, 3 * num_total_blocks_from_depths // 4
+            param_name_to_group_key.update(**{f'blocks.{i}.': 'layer_1' for i in range(q1)})
+            param_name_to_group_key.update(**{f'blocks.{i}.': 'layer_2' for i in range(q1, q2)})
+            param_name_to_group_key.update(**{f'blocks.{i}.': 'layer_3' for i in range(q2, q3)})
+            param_name_to_group_key.update(**{f'blocks.{i}.': 'layer_4' for i in range(q3, num_total_blocks_from_depths)})
+        else: logger.warning("HVT block depths not found or zero for layer-wise LR mapping.")
+        param_name_to_group_key.update({'norm.': 'layer_4', 'head.': 'head', 'classifier.': 'head'})
+
+        grouped_params_dict = defaultdict(lambda: {'params': [], 'lr_multiplier_key': None, 'has_wd': True})
+        param_names_no_decay = ['bias', '.norm.weight', 'LayerNorm.weight']
+
+        for name, param in model.named_parameters():
+            if not param.requires_grad: continue
+            is_no_decay = any(nd in name for nd in param_names_no_decay)
+            assigned_group_key, current_lr_mult, best_match_len = 'default_backbone', multipliers.get('default_backbone', 0.5), 0
+            for pattern, mult_key in param_name_to_group_key.items():
+                if name.startswith(pattern) and len(pattern) > best_match_len:
+                    best_match_len, assigned_group_key, current_lr_mult = len(pattern), mult_key, multipliers.get(mult_key, 1.0)
+            if assigned_group_key == 'default_backbone': logger.debug(f"Param {name} assigned to default LR group '{assigned_group_key}' mult {current_lr_mult}.")
+            
+            group_dict_key = (assigned_group_key, not is_no_decay)
+            grouped_params_dict[group_dict_key]['params'].append(param)
+            grouped_params_dict[group_dict_key]['lr_multiplier_key'] = assigned_group_key
+            grouped_params_dict[group_dict_key]['has_wd'] = not is_no_decay
+
+        for (mult_key, has_wd_flag), data in grouped_params_dict.items():
+            lr_mult = multipliers.get(data['lr_multiplier_key'], 1.0)
+            group_lr = default_max_lr_for_onecycle * lr_mult
+            param_groups.append({'params': data['params'], 'lr': group_lr, 'weight_decay': weight_decay if has_wd_flag else 0.0, 'name': f"{mult_key}_{'wd' if has_wd_flag else 'no_wd'}"})
+            logger.debug(f"Created param group: {param_groups[-1]['name']} with initial (max) LR: {group_lr:.2e}, WD: {param_groups[-1]['weight_decay']}")
+        logger.info(f"Created {len(param_groups)} parameter groups for layer-wise LR.")
     else:
-        cfg = load_enhanced_config()
+        lr_head = cfg.get('lr_head_unfrozen_phase', default_max_lr_for_onecycle)
+        lr_backbone = cfg.get('lr_backbone_unfrozen_phase', default_max_lr_for_onecycle * 0.1)
+        head_params, backbone_params, no_decay_list = [], [], []
+        param_names_no_decay = ['bias', '.norm.weight', 'LayerNorm.weight']
+        for name, param in model.named_parameters():
+            if not param.requires_grad: continue
+            if any(nd in name for nd in param_names_no_decay): no_decay_list.append(param)
+            elif 'head' in name or 'classifier' in name: head_params.append(param)
+            else: backbone_params.append(param)
+        if head_params: param_groups.append({'params': head_params, 'lr': lr_head, 'weight_decay': weight_decay, 'name': 'head'})
+        if backbone_params: param_groups.append({'params': backbone_params, 'lr': lr_backbone, 'weight_decay': weight_decay, 'name': 'backbone'})
+        if no_decay_list: param_groups.append({'params': no_decay_list, 'lr': lr_head, 'weight_decay': 0.0, 'name': 'no_decay'})
+        logger.info("Using standard head/backbone parameter groups for LR.")
 
-    # Ensure output directory exists
-    os.makedirs(cfg['output_dir'], exist_ok=True)
+    if not param_groups:
+        logger.warning("No specific parameter groups, all params in one group.")
+        return [{'params': model.parameters(), 'lr': default_max_lr_for_onecycle, 'weight_decay': weight_decay}]
+    return param_groups
+
+def setup_model_optimizer_scheduler(cfg: Dict[str, Any], device: torch.device, num_classes: int,
+                                    steps_per_epoch: Optional[int] = None, model_to_load_state: Optional[dict]=None):
+    logger = _get_logger()
+    hvt_params = cfg.get('hvt_params_for_model_init', {}).copy()
+    hvt_params.update({'img_size': cfg['img_size'], 'num_classes': num_classes})
     
-    # Setup logging
-    # Assuming setup_logging is imported and works
-    try:
-        logger = setup_logging(os.path.join(cfg['output_dir'], 'training.log'), level=logging.INFO)
-    except NameError: # setup_logging not defined
-        logging.basicConfig(level=logging.INFO, 
-                            format='%(asctime)s - %(levelname)s - %(message)s',
-                            handlers=[logging.FileHandler(os.path.join(cfg['output_dir'], 'training.log')),
-                                      logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
-        logger.warning("setup_logging function not found. Using basic logging configuration.")
+    # Iteratively remove parameters not accepted by create_disease_aware_hvt
+    # based on runtime TypeErrors.
+    unexpected_params = [
+        'spectral_channels', 'patch_size', 
+        'embed_dim_rgb', 'embed_dim_spectral',
+        'depths', 'num_heads', 'mlp_ratio', 'qkv_bias',
+        'model_drop_rate', 'attn_drop_rate', 'drop_path_rate',
+        'norm_layer_name', 'use_dfca', 'use_gradient_checkpointing',
+        'ssl_enable_mae', 'ssl_enable_contrastive', 'enable_consistency_loss_heads',
+        'dfca_embed_dim_match_rgb', 'dfca_num_heads', 'dfca_drop_rate', 'dfca_use_disease_mask',
+        'ssl_mae_mask_ratio', 'ssl_mae_decoder_dim', 'ssl_mae_norm_pix_loss',
+        'ssl_contrastive_projector_dim', 'ssl_contrastive_projector_depth',
+        'layer_wise_lr_decay', # From HVT_ARCH_PARAMS_FROM_SSL_SOURCE overrides
+        'img_size' # Added based on TypeError
+    ]
+    # The following params might be part of HVT_ARCH_PARAMS_FROM_SSL_SOURCE but not typically passed to model constructors
+    # if they are specific to training strategies rather than model architecture itself.
+    # Keeping them in the list ensures they are popped if present.
 
-
-    logger.info("Starting training process with configuration:")
-    for key, value in cfg.items():
-        logger.info(f"{key}: {value}")
-
-    # Set seed for reproducibility
-    seed = cfg.get('seed', 42)
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-        torch.backends.cudnn.deterministic = cfg.get('cudnn_deterministic', False) # False for speed
-        torch.backends.cudnn.benchmark = cfg.get('cudnn_benchmark', True)         # True for speed if input sizes don't vary much
-
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
-
-    # --- Progressive Resizing Setup ---
-    current_img_size = tuple(cfg['img_size']) # Initial image size
-    # Dynamically set resize_schedule epochs if defined as fractions
-    # Example: 30, 60, 100 -> means absolute epochs
-    # If using fractions, they need to be calculated based on total_epochs
-    # The current config uses absolute epochs, which is fine.
+    for param_name in unexpected_params:
+        if param_name in hvt_params:
+            popped_value = hvt_params.pop(param_name)
+            logger.info(f"Removed '{param_name}' (value: {popped_value}) from HVT params before model creation, as it seems not accepted by create_disease_aware_hvt.")
     
-    # --- Class names (assuming they can be fetched or are predefined) ---
-    # This is important for 'calculate_metrics' and 'SARCLD2024Dataset'
-    # For SARCLD2024Dataset, it might infer from subdirectories or need them passed
-    # Example class names, replace with actuals or load from dataset
-    class_names = [f"Disease_{i}" for i in range(cfg['num_classes'])] 
-    # If SARCLD2024Dataset provides class_names after init:
-    # temp_dataset = SARCLD2024Dataset(cfg['train_dir'], transform=None, img_size=current_img_size)
-    # class_names = temp_dataset.class_names
+    logger.info(f"Final HVT params for create_disease_aware_hvt: {hvt_params}")
+    model = create_disease_aware_hvt(**hvt_params)
 
-    # --- DataLoaders ---
-    # Initial DataLoaders
-    train_loader, val_loader, test_loader = get_data_loaders(cfg, current_img_size, class_names=class_names)
-    if not train_loader or not val_loader:
-        logger.error("Failed to create train or validation data loaders. Exiting.")
+    if model_to_load_state:
+        current_model_state = model.state_dict()
+        filtered_load_state = {k: v for k, v in model_to_load_state.items() if k in current_model_state and current_model_state[k].shape == v.shape}
+        skipped_keys = set(model_to_load_state.keys()) - set(filtered_load_state.keys())
+        if skipped_keys: logger.warning(f"Skipping keys from pretrained weights due to shape mismatch or absence: {skipped_keys}")
+        missing_keys, unexpected_keys = model.load_state_dict(filtered_load_state, strict=False)
+        if missing_keys: logger.warning(f"Loading model state: Missing keys: {missing_keys}")
+        if unexpected_keys: logger.warning(f"Loading model state: Unexpected keys (should be rare): {unexpected_keys}")
+        logger.info(f"Model state loaded from filtered pretrained weights. {len(filtered_load_state)} keys loaded.")
+    model = model.to(device)
+
+    if cfg.get('channels_last', False):
+        try: model = model.to(memory_format=torch.channels_last); logger.info("Model to channels_last.")
+        except Exception as e_cl: logger.warning(f"Failed model to channels_last: {e_cl}")
+
+    if cfg.get('enable_torch_compile', True) and hasattr(torch, 'compile'):
+        compile_mode = cfg.get('torch_compile_mode', 'default')
+        try:
+            logger.info(f"Compiling model with torch.compile(mode='{compile_mode}')...")
+            if 'matmul_precision' in cfg and hasattr(torch, 'set_float32_matmul_precision'):
+                logger.info(f"Setting matmul_precision: '{cfg['matmul_precision']}'")
+                torch.set_float32_matmul_precision(cfg['matmul_precision'])
+            model = torch.compile(model, mode=compile_mode)
+        except Exception as e: logger.warning(f"Model compilation failed: {e}. No compilation.")
+
+    optimizer_param_config = get_optimizer_param_groups(model, cfg)
+    opt_cfg_params = cfg.get('optimizer_params', {})
+    optimizer_name = cfg.get('optimizer', "AdamW").lower()
+
+    if optimizer_name == "adamw": optimizer = AdamW(optimizer_param_config, betas=opt_cfg_params.get('betas', (0.9, 0.999)), eps=opt_cfg_params.get('eps', 1e-8), amsgrad=opt_cfg_params.get('amsgrad', False))
+    elif optimizer_name == "sgd": optimizer = SGD(optimizer_param_config, momentum=opt_cfg_params.get('momentum', 0.9), nesterov=opt_cfg_params.get('nesterov', True))
+    else: raise ValueError(f"Unsupported optimizer: {optimizer_name}")
+    logger.info(f"Optimizer: {optimizer_name} with {len(optimizer.param_groups)} param groups.")
+
+    scheduler_name = cfg.get('scheduler', 'OneCycleLR').lower()
+    scheduler = None
+    if scheduler_name == 'onecyclelr':
+        if steps_per_epoch is None: raise ValueError("OneCycleLR needs steps_per_epoch.")
+        max_lrs = [pg['lr'] for pg in optimizer.param_groups]
+        scheduler = OneCycleLR(optimizer, max_lr=max_lrs, epochs=cfg['epochs'], steps_per_epoch=steps_per_epoch, pct_start=cfg.get('onecycle_pct_start', 0.3), div_factor=cfg.get('onecycle_div_factor', 25), final_div_factor=cfg.get('onecycle_final_div_factor', 1e4), three_phase=cfg.get('onecycle_three_phase', False), anneal_strategy=cfg.get('onecycle_anneal_strategy', 'cos'))
+        logger.info(f"OneCycleLR scheduler with max_lrs per group: {max_lrs}")
+    elif scheduler_name == 'reduceonplateau':
+        scheduler = ReduceLROnPlateau(optimizer, mode='max', factor=cfg.get('plateau_factor', 0.2), patience=cfg.get('plateau_patience', 10), verbose=True, min_lr=cfg.get('eta_min_lr',1e-7))
+        logger.info("ReduceLROnPlateau scheduler.")
+    return model, optimizer, scheduler
+
+def progressive_unfreezing_hvt(model: nn.Module, epoch: int, cfg: Dict[str, Any]):
+    logger = _get_logger()
+    if not cfg.get('progressive_unfreezing', False):
+        if epoch == 0: logger.info("Progressive unfreezing disabled.")
         return
 
+    initial_freeze_epochs = cfg.get('freeze_backbone_epochs', 0)
+    unfreeze_schedule_epochs = cfg.get('unfreezing_schedule', [])
+    target_model = model.module if hasattr(model, 'module') else model
+
+    for param in target_model.parameters(): param.requires_grad = False
+
+    head_trained = False
+    head_patterns = ['head', 'classifier', 'fc']
+    if hasattr(target_model, 'head') and target_model.head is not None:
+        for param in target_model.head.parameters(): param.requires_grad = True
+        head_trained = True
+    else:
+        for name, param in target_model.named_parameters():
+            if any(patt in name.lower() for patt in head_patterns):
+                param.requires_grad = True; head_trained = True
+    if not head_trained and epoch == 0: logger.warning("No model head params identified for unfreezing.")
+
+    if epoch >= initial_freeze_epochs:
+        num_blocks = len(target_model.blocks) if hasattr(target_model, 'blocks') and isinstance(target_model.blocks, nn.ModuleList) else 0
+        if hasattr(target_model, 'patch_embed'):
+            for param in target_model.patch_embed.parameters(): param.requires_grad = True
+        if hasattr(target_model, 'norm') and target_model.norm is not None and not isinstance(target_model.norm, nn.Identity):
+            for param in target_model.norm.parameters(): param.requires_grad = True
+
+        if num_blocks > 0:
+            unfreeze_count = 0
+            if not unfreeze_schedule_epochs: unfreeze_count = num_blocks
+            else:
+                stages_passed = sum(1 for sched_ep in unfreeze_schedule_epochs if epoch >= sched_ep)
+                if stages_passed > 0 and len(unfreeze_schedule_epochs) > 0:
+                    unfreeze_count = math.ceil(num_blocks * (stages_passed / len(unfreeze_schedule_epochs)))
+                elif stages_passed == 0 and len(unfreeze_schedule_epochs) > 0: unfreeze_count = 0
+                else: unfreeze_count = num_blocks
+
+            start_idx = num_blocks - unfreeze_count
+            for i in range(max(0, start_idx), num_blocks):
+                if i < len(target_model.blocks):
+                    for param in target_model.blocks[i].parameters(): param.requires_grad = True
+            if epoch == initial_freeze_epochs or epoch in unfreeze_schedule_epochs:
+                logger.info(f"Epoch {epoch}: Unfreezing. Total blocks: {num_blocks}. Unfrozen from top: {unfreeze_count}.")
+    elif epoch == 0: logger.info(f"Epoch {epoch}: Initial freeze phase. Head trainable for {initial_freeze_epochs} epochs.")
+
+    if epoch == 0 or epoch == initial_freeze_epochs or epoch in unfreeze_schedule_epochs:
+        num_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logger.info(f"Epoch {epoch}: Trainable params: {num_trainable:,}")
+
+def plot_training_curves(history: Dict[str, List[float]], output_dir: str, cfg_metric_name: str):
+    logger = _get_logger()
+    epochs_ran = range(1, len(history['train_loss']) + 1)
+    if not epochs_ran: logger.warning("No history to plot."); return
+
+    plt.figure(figsize=(18, 5))
+    plt.subplot(1, 3, 1); plt.plot(epochs_ran, history['train_loss'], 'bo-', label='Train Loss'); plt.plot(epochs_ran, history['val_loss'], 'ro-', label='Val Loss'); plt.title('Loss'); plt.xlabel('Epochs'); plt.ylabel('Loss'); plt.legend(); plt.grid(True)
+
+    base_metric = cfg_metric_name.replace('val_', '')
+    train_key, val_key, label = f"train_{base_metric}", f"val_{base_metric}", base_metric.replace("_", " ").title()
+    fallback_used = False
+    if not (train_key in history and val_key in history and history[train_key] and history[val_key] and len(history[train_key]) == len(epochs_ran) and len(history[val_key]) == len(epochs_ran)):
+        if 'train_accuracy' in history and 'val_accuracy' in history and history['train_accuracy'] and history['val_accuracy'] and len(history['train_accuracy']) == len(epochs_ran) and len(history['val_accuracy']) == len(epochs_ran):
+            train_key, val_key, label, fallback_used = 'train_accuracy', 'val_accuracy', 'Accuracy', True
+            logger.debug(f"Plotting fallback accuracy as '{base_metric}' not fully in history.")
+        else: logger.warning(f"Cannot plot metric '{base_metric}' or fallback 'accuracy'. Data missing/inconsistent."); return
+
+    plt.subplot(1, 3, 2); plt.plot(epochs_ran, history[train_key], 'bo-', label=f'Train {label}'); plt.plot(epochs_ran, history[val_key], 'ro-', label=f'Val {label}'); plt.title(label); plt.xlabel('Epochs'); plt.ylabel(label.split(' ')[-1]); plt.legend(); plt.grid(True)
+
+    if 'lr' in history and history['lr'] and len(history['lr']) == len(epochs_ran):
+        plt.subplot(1, 3, 3); plt.plot(epochs_ran, history['lr'], 'go-', label='LR'); plt.title('Learning Rate'); plt.xlabel('Epochs'); plt.ylabel('LR'); plt.legend(); plt.grid(True)
+        if any(lr > 1e-9 for lr in history['lr']): plt.gca().set_yscale('log')
+    else: logger.warning("No 'lr' data or mismatched length for plotting.")
+
+    plt.tight_layout(); plt.savefig(os.path.join(output_dir, "training_curves.png")); plt.close()
+    logger.info(f"Training curves plotted to {os.path.join(output_dir, 'training_curves.png')}")
+
+def plot_confusion_matrix_main(cm: np.ndarray, class_names: List[str], output_path: str, filename="confusion_matrix.png"):
+    logger = _get_logger()
+    plt.figure(figsize=(max(8, len(class_names)*0.9), max(6, len(class_names)*0.7)))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_names, yticklabels=class_names, cbar=True)
+    plt.xlabel('Predicted Labels'); plt.ylabel('True Labels'); plt.title('Confusion Matrix'); plt.tight_layout()
+    plt.savefig(os.path.join(output_path, filename)); plt.close()
+    logger.info(f"Confusion matrix saved to {os.path.join(output_path, filename)}")
+
+def main(cfg: Dict[str, Any]):
+    global logger_main_global 
+
+    output_dir = os.path.join(cfg['PACKAGE_ROOT_PATH'], cfg['log_dir'])
+    checkpoints_save_dir = os.path.join(output_dir, cfg['checkpoint_save_dir_name'])
+    os.makedirs(output_dir, exist_ok=True); os.makedirs(checkpoints_save_dir, exist_ok=True)
+
+    log_file_path = os.path.join(output_dir, cfg['log_file_finetune'])
+    try:
+        logger_main_global = setup_logging(log_file_path)
+    except NameError: 
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', handlers=[logging.FileHandler(log_file_path), logging.StreamHandler(sys.stdout)])
+        logger_main_global = logging.getLogger("main_fallback_logger") 
+        logger_main_global.warning("setup_logging function not found. Using basicConfig.")
+    except TypeError as e_setup_logging: 
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', handlers=[logging.FileHandler(log_file_path), logging.StreamHandler(sys.stdout)])
+        logger_main_global = logging.getLogger("main_typeerror_fallback_logger")
+        logger_main_global.error(f"TypeError in setup_logging: {e_setup_logging}. Fallback to basicConfig. Ensure setup_logging function definition is correct (e.g., it should NOT take a 'level' argument if this error persists).")
+
+    logger = _get_logger() 
+    logger.info("Starting finetuning process (High Performance V2 Strategy):")
+
+    logged_cfg_keys = ['seed', 'device', 'log_dir', 'resume_from_checkpoint', 'data_root', 'img_size', 'num_classes',
+                       'epochs', 'batch_size', 'accumulation_steps', 'optimizer', 'scheduler', 'loss_function',
+                       'metric_to_monitor_early_stopping', 'early_stopping_patience',
+                       'progressive_unfreezing', 'freeze_backbone_epochs', 'use_ema', 'use_swa', 'amp_enabled']
+    for key in logged_cfg_keys:
+        if key in cfg: logger.info(f"  {key}: {cfg[key]}")
+    if 'hvt_params_for_model_init' in cfg:
+        logger.info(f"  HVT Model Key Params (before potential modification for create_disease_aware_hvt): patch_size={cfg['hvt_params_for_model_init'].get('patch_size')}, depths={cfg['hvt_params_for_model_init'].get('depths')}, embed_dim_rgb={cfg['hvt_params_for_model_init'].get('embed_dim_rgb')}")
+
+    seed = cfg.get('seed', 42); random.seed(seed); np.random.seed(seed); torch.manual_seed(seed)
+    device = torch.device(cfg['device'])
+    if device.type == 'cuda':
+        torch.cuda.manual_seed_all(seed)
+        torch.backends.cudnn.benchmark = cfg.get('cudnn_benchmark', True)
+    logger.info(f"Device: {device}. Seed: {seed}. CudNN Benchmark: {torch.backends.cudnn.benchmark if device.type == 'cuda' else 'N/A'}.")
+
+    try:
+        _dummy_ds_path = cfg['data_root'] 
+        dummy_ds_args = {
+            'root_dir': _dummy_ds_path,
+            'split': 'train', 
+            'img_size': cfg['img_size'],
+            'train_split_ratio': cfg.get('train_split_ratio', 0.8),
+            'original_dataset_name': cfg.get('original_dataset_name'),
+            'augmented_dataset_name': cfg.get('augmented_dataset_name'),
+            'random_seed': cfg.get('seed')
+        }
+        logger.info(f"Arguments for Dummy SARCLD2024Dataset: {dummy_ds_args}")
+        _dummy_dataset = SARCLD2024Dataset(**dummy_ds_args)
+        class_names = _dummy_dataset.get_class_names() 
+        del _dummy_dataset
+    except TypeError as e_type_dummy:
+        logger.warning(f"TypeError creating dummy dataset: {e_type_dummy}. "
+                       f"This indicates an argument mismatch with SARCLD2024Dataset.__init__ in your active dataset.py. "
+                       f"Using generic class names.")
+        class_names = [f"C{i}" for i in range(cfg['num_classes'])]
+    except Exception as e_dummy:
+        logger.warning(f"Could not infer class_names from dummy dataset ({e_dummy}). Using generic names: C0, C1, ...")
+        class_names = [f"C{i}" for i in range(cfg['num_classes'])]
+    logger.info(f"Class names ({len(class_names)} total): {class_names}")
+
+    current_img_size = tuple(cfg['img_size'])
+    if cfg.get('progressive_resizing_main_loop_enabled'):
+        logger.warning("Main loop progressive resizing is configured but NOT YET FULLY IMPLEMENTED in this script. Current image size will be fixed as per cfg['img_size'] unless trainer internally resizes.")
+
+    train_loader, val_loader, test_loader = get_data_loaders(cfg, current_img_size, class_names, dataset_base_path=cfg['data_root'])
+    if not train_loader or not val_loader: logger.error("Train/Val DataLoaders failed. Exiting."); return
     steps_per_epoch = len(train_loader)
 
-    # --- Model, Optimizer, Scheduler ---
-    model, optimizer, scheduler = setup_model_optimizer_scheduler(cfg, device, cfg['num_classes'], total_steps_per_epoch=steps_per_epoch)
+    model_initial_state_dict = None
+    resume_finetune_path = cfg.get('resume_from_checkpoint')
+    ssl_path = cfg.get('pretrained_checkpoint_path')
 
-    # --- Loss Function ---
-    criterion = None
-    adaptive_loss_instance = None # For AdaptiveFocalLoss gamma updates
-    if cfg['loss_type'] == 'focal':
-        criterion = FocalLoss(alpha=cfg.get('focal_alpha'), gamma=cfg['focal_gamma'], num_classes=cfg['num_classes'])
-    elif cfg['loss_type'] == 'adaptive_focal':
-        adaptive_loss_instance = AdaptiveFocalLoss(
-            alpha=cfg.get('focal_alpha'), 
-            gamma_start=cfg['adaptive_focal_gamma_start'], 
-            gamma_end=cfg['adaptive_focal_gamma_end'],
-            num_classes=cfg['num_classes']
-        )
-        criterion = adaptive_loss_instance
-    elif cfg['loss_type'] == 'label_smoothing':
-        # Example: calculate class weights if needed (e.g., inverse frequency)
-        # class_weights_tensor = torch.tensor([1.0] * cfg['num_classes'], device=device) # Placeholder
-        criterion = LabelSmoothingCrossEntropy(num_classes=cfg['num_classes'], smoothing=cfg['label_smoothing_epsilon'])
-    else: # Default to CrossEntropyLoss
-        criterion = nn.CrossEntropyLoss()
-    criterion = criterion.to(device)
-    logger.info(f"Using loss function: {cfg['loss_type']}")
+    if not (resume_finetune_path and os.path.exists(resume_finetune_path)):
+        if cfg.get('load_pretrained_backbone', True) and ssl_path and os.path.exists(ssl_path):
+            logger.info(f"No finetune checkpoint to resume, or path invalid. Will attempt to load SSL backbone: {ssl_path}")
+            ssl_checkpoint = torch.load(ssl_path, map_location='cpu')
+            model_initial_state_dict = ssl_checkpoint.get('model_state', ssl_checkpoint.get('state_dict', ssl_checkpoint.get('model', ssl_checkpoint)))
+            if model_initial_state_dict is None:
+                 logger.warning(f"Could not find model state in SSL checkpoint {ssl_path} under common keys.")
+        elif cfg.get('load_pretrained_backbone', True):
+            logger.warning(f"SSL backbone loading configured, but path '{ssl_path}' not found or not specified. Training from scratch.")
+        else:
+            logger.info("Training from scratch (no resume, no SSL backbone specified or enabled).")
 
-    # --- AMP Scaler ---
-    scaler = GradScaler(enabled=cfg['amp_enabled'])
+    model, optimizer, scheduler = setup_model_optimizer_scheduler(
+        cfg, device, cfg['num_classes'], steps_per_epoch,
+        model_initial_state_dict
+    )
 
-    # --- EMA Model ---
-    ema_model = None
-    if cfg.get('use_ema', False):
-        ema_model = EMA(model, decay=cfg['ema_decay'], warmup_steps=cfg['ema_warmup_steps'])
-        logger.info("EMA enabled.")
+    class_weights_for_loss = get_class_weights_for_loss(train_loader.dataset, device, cfg) if train_loader else None
+    criterion = CombinedLoss(num_classes=cfg['num_classes'],
+                             smoothing=cfg.get('loss_label_smoothing', 0.1),
+                             focal_alpha=cfg.get('focal_loss_alpha', 0.25),
+                             focal_gamma=cfg.get('focal_loss_gamma', 2.0),
+                             ce_weight=cfg.get('loss_weights',{}).get('ce_weight',0.5),
+                             focal_weight=cfg.get('loss_weights',{}).get('focal_weight',0.5),
+                             class_weights_tensor=class_weights_for_loss).to(device)
+    logger.info(f"Criterion: CombinedLoss (CE_w={criterion.ce_weight:.2f}, Focal_w={criterion.focal_weight:.2f}, LS={cfg.get('loss_label_smoothing',0.1):.2f}), ClassWeights: {'Enabled' if class_weights_for_loss is not None else 'Disabled'}")
 
-    # --- Augmentation Functions ---
-    mixup_cutmix_fn = None
-    if cfg.get('use_mixup_cutmix', False):
-        mixup_cutmix_fn = AdvancedCutMixUp(
-            mixup_alpha=cfg['mixup_alpha'], cutmix_alpha=cfg['cutmix_alpha'],
-            prob=cfg['mixup_cutmix_prob'], num_classes=cfg['num_classes']
-        )
-        logger.info("MixUp/CutMix enabled.")
-    
-    agc_fn = None
-    if cfg.get('use_adaptive_grad_clip', False):
-        agc_fn = AdaptiveGradientClipping(clip_factor=cfg['agc_clip_factor'], eps=cfg['agc_eps'])
-        logger.info("Adaptive Gradient Clipping enabled.")
+    scaler = GradScaler(enabled=cfg.get('amp_enabled', True))
+    ema_model = EMA(model, decay=cfg.get('ema_decay',0.9999), warmup_steps=cfg.get('ema_warmup_steps', 0)) if cfg.get('use_ema') else None
+    if ema_model: logger.info(f"EMA enabled (decay={cfg.get('ema_decay',0.9999)}, warmup_steps={cfg.get('ema_warmup_steps',0)}).")
 
-    # --- Training Loop ---
-    best_metric_val = -float('inf') if 'accuracy' in cfg['monitor_metric'] or 'f1' in cfg['monitor_metric'] else float('inf')
-    epochs_no_improve = 0
+    trainer_input_size = current_img_size[0]
+    trainer_max_input_size = current_img_size[0]
+    if cfg.get('trainer_use_progressive_resize', False) and 'progressive_resize_schedule' in cfg: 
+        all_prog_sizes = [s[0] for s in cfg.get('progressive_resize_schedule', {0:current_img_size}).values()]
+        if all_prog_sizes: trainer_max_input_size = max(all_prog_sizes)
+
+    finetuner = EnhancedFinetuner(
+        model=model, optimizer=optimizer, criterion=criterion, device=device, scaler=scaler, scheduler=scheduler,
+        lr_scheduler_on_batch=(cfg.get('scheduler','').lower() == 'onecyclelr'),
+        accumulation_steps=cfg.get('accumulation_steps',1),
+        clip_grad_norm=cfg.get('clip_grad_norm'),
+        num_classes=cfg['num_classes'],
+        tta_enabled_val=cfg.get('tta_enabled_val',False),
+        use_enhanced_tta=cfg.get('use_enhanced_tta_trainer', True),
+        debug_nan_detection=cfg.get('debug_nan_detection',False),
+        stop_on_nan_threshold=cfg.get('stop_on_nan_threshold',5),
+        monitor_gradients=cfg.get('monitor_gradients',False),
+        gradient_log_interval=cfg.get('gradient_log_interval',50),
+        mixup_alpha=cfg.get('mixup_alpha',0.0),
+        cutmix_alpha=cfg.get('cutmix_alpha',0.0),
+        mixup_prob=cfg.get('mixup_prob',0.5) if cfg.get('mixup_alpha',0.0)>0 else 0.0,
+        cutmix_prob=cfg.get('cutmix_prob',0.5) if cfg.get('cutmix_alpha',0.0)>0 else 0.0,
+        label_smoothing=cfg.get('loss_label_smoothing',0.0),
+        confidence_penalty=cfg.get('trainer_confidence_penalty', 0.0), 
+        use_progressive_resize=cfg.get('trainer_use_progressive_resize', False), 
+        input_size=trainer_input_size, 
+        max_input_size=trainer_max_input_size, 
+        swa_enabled=cfg.get('use_swa',False),
+        swa_start_epoch=cfg.get('swa_start_epoch', cfg['epochs'] - max(1, int(cfg['epochs']*0.2)) ),
+        multiscale_training=cfg.get('trainer_multiscale_training_enabled', False), 
+        scale_range=tuple(cfg.get('trainer_multiscale_scale_range', [int(trainer_input_size*0.75), int(trainer_input_size*1.25)])) 
+    )
+    finetuner.augmentations = None 
+
+    if 'dropout_schedule' in cfg and logger:
+        logger.warning("Config contains 'dropout_schedule', but dynamic application is not implemented in this script.")
+
     start_epoch = 0
-    history = {'train_loss': [], 'val_loss': [], 'train_accuracy': [], 'val_accuracy': [], 'train_f1_score': [], 'val_f1_score': []}
+    metric_to_monitor = cfg.get('metric_to_monitor_early_stopping', 'f1_macro')
+    effective_metric_key_for_val_dict = metric_to_monitor.replace('val_', '')
+    best_val_metric = -float('inf') if "loss" not in metric_to_monitor.lower() else float('inf')
+    epochs_no_improve = 0
+    history = defaultdict(list)
 
-    # Resume from checkpoint
-    if cfg.get('checkpoint_path') and os.path.exists(cfg['checkpoint_path']):
-        logger.info(f"Resuming training from checkpoint: {cfg['checkpoint_path']}")
-        checkpoint = torch.load(cfg['checkpoint_path'], map_location=device)
-        # Model state is loaded in setup_model_optimizer_scheduler
-        start_epoch = checkpoint.get('epoch', 0) + 1
-        best_metric_val = checkpoint.get('best_metric_val', best_metric_val)
-        epochs_no_improve = checkpoint.get('epochs_no_improve', 0)
-        if ema_model and 'ema_state_dict' in checkpoint:
-            # EMA state loading needs care if model structure changed (unlikely for just weights)
-            # For simplicity, re-register if resuming. Or load shadow params.
-            # ema.shadow = checkpoint['ema_state_dict']['shadow']
-            # ema.num_updates = checkpoint['ema_state_dict']['num_updates']
-            logger.info("EMA state found in checkpoint. Consider how to load it properly if needed (not implemented here for simplicity).")
-        if 'history' in checkpoint: history = checkpoint['history']
-        logger.info(f"Resuming from epoch {start_epoch}, Best Val Metric: {best_metric_val:.4f}")
-
+    if resume_finetune_path and os.path.exists(resume_finetune_path):
+        logger.info(f"Attempting to load full finetuner state from: {resume_finetune_path}")
+        start_epoch, best_val_metric = finetuner.load_checkpoint(resume_finetune_path, effective_metric_key_for_val_dict)
+        try:
+            chkpt_content_ext = torch.load(resume_finetune_path, map_location='cpu')
+            epochs_no_improve = chkpt_content_ext.get('epochs_no_improve', 0)
+            if ema_model and 'ema_state_dict' in chkpt_content_ext and chkpt_content_ext['ema_state_dict']:
+                try:
+                    ema_model.shadow = chkpt_content_ext['ema_state_dict']['shadow']
+                    ema_model.num_updates = chkpt_content_ext['ema_state_dict']['num_updates']
+                    for name_sh in ema_model.shadow:
+                        if name_sh in dict(model.named_parameters()):
+                            ref_param = dict(model.named_parameters())[name_sh]
+                            ema_model.shadow[name_sh] = ema_model.shadow[name_sh].to(device=ref_param.device, dtype=ref_param.dtype)
+                    logger.info("Resumed EMA state from extended checkpoint data.")
+                except Exception as e_ema_load: logger.warning(f"Could not load EMA state from extended data: {e_ema_load}")
+            resumed_hist = chkpt_content_ext.get('history')
+            if resumed_hist: history = defaultdict(list, resumed_hist); logger.info("Resumed training history from extended checkpoint data.")
+            del chkpt_content_ext
+        except Exception as e_load_ext:
+            logger.warning(f"Could not load extended checkpoint data (history, EMA) from {resume_finetune_path}: {e_load_ext}")
+        logger.info(f"Resumed. Start epoch: {start_epoch}, Best '{effective_metric_key_for_val_dict}': {best_val_metric:.4f}, Epochs no improve: {epochs_no_improve}")
+    else:
+        logger.info(f"No valid resume_from_checkpoint path ('{resume_finetune_path}') found or specified. Starting fresh or from SSL backbone.")
 
     for epoch in range(start_epoch, cfg['epochs']):
         logger.info(f"--- Epoch {epoch}/{cfg['epochs']-1} ---")
+        progressive_unfreezing_hvt(model, epoch, cfg)
 
-        # Progressive Resizing
-        if cfg.get('progressive_resizing', False):
-            new_size_tuple = None
-            for scheduled_epoch, size_cfg in cfg['resize_schedule'].items():
-                if epoch == scheduled_epoch:
-                    new_size_tuple = tuple(size_cfg)
-                    break
-            
-            if new_size_tuple and new_size_tuple != current_img_size:
-                logger.info(f"Progressive resizing: Changing image size from {current_img_size} to {new_size_tuple} at epoch {epoch}")
-                current_img_size = new_size_tuple
-                cfg['img_size'] = list(current_img_size) # Update config for dataset/model recreation
-
-                # Recreate DataLoaders
-                train_loader, val_loader, test_loader = get_data_loaders(cfg, current_img_size, class_names=class_names)
-                if not train_loader or not val_loader:
-                    logger.error("Failed to recreate data loaders during progressive resizing. Exiting.")
-                    return
-                steps_per_epoch = len(train_loader)
-
-                # Recreate model (or adjust position embeddings if necessary)
-                # For ViT, pos_embed often needs interpolation. create_disease_aware_hvt should handle this.
-                # Optimizer and scheduler might also need re-init or careful state handling if model params change significantly.
-                # For simplicity, we re-init them here. State can be lost.
-                # More robust: Save optimizer state, re-init with new params, load relevant parts of state.
-                logger.info("Re-initializing model, optimizer, and scheduler for new image size.")
-                model, optimizer, scheduler = setup_model_optimizer_scheduler(cfg, device, cfg['num_classes'], current_epoch=epoch, total_steps_per_epoch=steps_per_epoch)
-                
-                # Re-init EMA if used
-                if ema_model: ema_model = EMA(model, decay=cfg['ema_decay'], warmup_steps=cfg['ema_warmup_steps'])
-
-        # Progressive Unfreezing
-        if cfg.get('freeze_backbone_epochs', 0) > 0:
-            progressive_unfreezing(model, epoch, cfg['epochs'], cfg)
-
-        # Training
-        train_start_time = time.time()
-        train_loss, train_metrics = train_one_epoch(
-            model, train_loader, optimizer, criterion, device, scaler, cfg, epoch,
-            mixup_cutmix_fn, agc_fn, adaptive_loss_instance
-        )
-        logger.info(f"Epoch {epoch} Train: Loss={train_loss:.4f}, Acc={train_metrics['accuracy']:.4f}, F1_w={train_metrics['f1_score_weighted']:.4f} (Time: {time.time()-train_start_time:.2f}s)")
-        
+        train_loss, nan_train_flag = finetuner.train_one_epoch(train_loader, epoch, cfg['epochs'])
+        if nan_train_flag:
+            logger.error(f"NaNs encountered during training in epoch {epoch}. Training stopped."); break
         history['train_loss'].append(train_loss)
-        history['train_accuracy'].append(train_metrics['accuracy'])
-        history['train_f1_score'].append(train_metrics['f1_score_weighted'])
+        history['train_accuracy'].append(0.0) 
+        history[f"train_{effective_metric_key_for_val_dict}"].append(0.0) 
 
-        # Validation
-        val_start_time = time.time()
-        val_loss, val_metrics = validate_one_epoch(
-            model, val_loader, criterion, device, cfg, ema_model
-        )
-        logger.info(f"Epoch {epoch} Val: Loss={val_loss:.4f}, Acc={val_metrics['accuracy']:.4f}, F1_w={val_metrics['f1_score_weighted']:.4f} (Time: {time.time()-val_start_time:.2f}s)")
+        use_swa_for_current_val = cfg.get('use_swa',False) and epoch >= cfg.get('swa_start_epoch', cfg['epochs'])
+        if ema_model and not use_swa_for_current_val: ema_model.apply_shadow()
+        val_loss, val_metrics_dict = finetuner.validate_one_epoch(val_loader, class_names, use_swa=use_swa_for_current_val)
+        if ema_model and not use_swa_for_current_val: ema_model.restore()
         
         history['val_loss'].append(val_loss)
-        history['val_accuracy'].append(val_metrics['accuracy'])
-        history['val_f1_score'].append(val_metrics['f1_score_weighted'])
-        
-        # Update AdaptiveFocalLoss gamma based on validation metric
-        if adaptive_loss_instance and hasattr(adaptive_loss_instance, 'update_gamma'):
-            adaptive_loss_instance.update_gamma(val_metrics[cfg.get('monitor_metric', 'val_f1_score_weighted').replace('val_','')]) # Use the validation metric specified
+        current_val_metric_value = val_metrics_dict.get(effective_metric_key_for_val_dict, -float('inf'))
+        for m_key, m_val in val_metrics_dict.items(): history[f"val_{m_key}"].append(m_val)
 
-        # LR Scheduler step
-        if scheduler:
-            if isinstance(scheduler, ReduceLROnPlateau):
-                scheduler.step(val_metrics[cfg['monitor_metric']]) # Needs the monitored metric
-            else: # For step-based schedulers, if not done per step in train_one_epoch
-                scheduler.step() # Step per epoch
+        if scheduler and not finetuner.lr_scheduler_on_batch:
+            if isinstance(scheduler, ReduceLROnPlateau): scheduler.step(current_val_metric_value)
+            else: scheduler.step()
+        current_lr_log = optimizer.param_groups[0]['lr']; history['lr'].append(current_lr_log)
+        logger.info(f"Epoch {epoch} Val: Loss={val_loss:.4f}, Monitored '{effective_metric_key_for_val_dict}'={current_val_metric_value:.4f}. LR: {current_lr_log:.2e}")
 
-        current_lr = optimizer.param_groups[0]['lr']
-        logger.info(f"Current LR: {current_lr:.2e}")
+        if ema_model: ema_model.update()
 
-        # Save model checkpoint
-        is_best = False
-        current_metric_val = val_metrics[cfg['monitor_metric']]
-        if ('loss' in cfg['monitor_metric'] and current_metric_val < best_metric_val) or \
-           (('accuracy' in cfg['monitor_metric'] or 'f1' in cfg['monitor_metric']) and current_metric_val > best_metric_val):
-            best_metric_val = current_metric_val
-            epochs_no_improve = 0
-            is_best = True
-            if cfg['save_best_only']:
-                save_path = os.path.join(cfg['output_dir'], "best_model.pth")
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
-                    'ema_state_dict': {'shadow': ema_model.shadow, 'num_updates': ema_model.num_updates} if ema_model else None,
-                    'best_metric_val': best_metric_val,
-                    'config': cfg, # Save config for reproducibility
-                    'history': history,
-                    'current_img_size': current_img_size
-                }, save_path)
-                logger.info(f"Best model saved to {save_path} (Epoch {epoch}, {cfg['monitor_metric']}: {best_metric_val:.4f})")
-        else:
-            epochs_no_improve += 1
-        
-        # Save latest checkpoint periodically or always if not save_best_only
-        if not cfg['save_best_only'] or epoch % 5 == 0 : # Example: save every 5 epochs
-            save_path = os.path.join(cfg['output_dir'], f"checkpoint_epoch_{epoch}.pth")
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                 # ... (same content as best_model save)
-                'optimizer_state_dict': optimizer.state_dict(),
-                'scheduler_state_dict': scheduler.state_dict() if scheduler else None,
-                'ema_state_dict': {'shadow': ema_model.shadow, 'num_updates': ema_model.num_updates} if ema_model else None,
-                'best_metric_val': best_metric_val, # Keep track of overall best
-                'config': cfg,
-                'history': history,
-                'current_img_size': current_img_size,
-                'epochs_no_improve': epochs_no_improve
-            }, save_path)
-            logger.info(f"Checkpoint saved to {save_path}")
+        min_improvement_delta = cfg.get('min_delta_early_stopping', 1e-5)
+        is_better_metric = (("loss" in metric_to_monitor.lower() and current_val_metric_value < best_val_metric - min_improvement_delta) or
+                            (not "loss" in metric_to_monitor.lower() and current_val_metric_value > best_val_metric + min_improvement_delta))
 
-        # Early Stopping
-        if cfg.get('early_stopping_patience', 0) > 0 and epochs_no_improve >= cfg['early_stopping_patience']:
-            logger.info(f"Early stopping triggered after {epochs_no_improve} epochs with no improvement on {cfg['monitor_metric']}.")
-            break
-            
-        # Plot metrics so far
-        if epoch % 5 == 0 and epoch > 0: # Plot every 5 epochs
-             plot_training_curves(history, cfg['output_dir'])
+        if is_better_metric:
+            best_val_metric = current_val_metric_value; epochs_no_improve = 0
+            best_model_save_path = os.path.join(checkpoints_save_dir, cfg['best_model_filename'])
+            finetuner.save_checkpoint(best_model_save_path, epoch, best_val_metric, metric_to_monitor)
+            checkpoint_data_to_add = {'ema_state_dict': {'shadow': ema_model.shadow, 'num_updates': ema_model.num_updates} if ema_model else None, 'history': dict(history), 'config_runtime': cfg, 'epochs_no_improve': epochs_no_improve, 'class_names': class_names, 'val_metrics_at_best': val_metrics_dict}
+            try:
+                current_checkpoint_content = torch.load(best_model_save_path); current_checkpoint_content.update(checkpoint_data_to_add); torch.save(current_checkpoint_content, best_model_save_path)
+                logger.info(f"Best model extended and saved to {best_model_save_path} (Epoch {epoch}, Best {metric_to_monitor}: {best_val_metric:.4f})")
+            except Exception as e_save_best: logger.error(f"Error extending best checkpoint: {e_save_best}")
+        else: epochs_no_improve += 1
+
+        save_periodic_freq = cfg.get('save_checkpoint_every_n_epochs',0)
+        if save_periodic_freq > 0 and (epoch + 1) % save_periodic_freq == 0:
+            periodic_ckpt_path = os.path.join(checkpoints_save_dir, f"checkpoint_epoch_{epoch}.pth")
+            finetuner.save_checkpoint(periodic_ckpt_path, epoch, current_val_metric_value, metric_to_monitor)
+            periodic_data_to_add = {'ema_state_dict': {'shadow': ema_model.shadow, 'num_updates': ema_model.num_updates} if ema_model else None, 'history': dict(history), 'config_runtime': cfg, 'epochs_no_improve': epochs_no_improve, 'overall_best_val_metric': best_val_metric, 'class_names': class_names, 'val_metrics_current_epoch': val_metrics_dict}
+            try:
+                periodic_ckpt_content = torch.load(periodic_ckpt_path); periodic_ckpt_content.update(periodic_data_to_add); torch.save(periodic_ckpt_content, periodic_ckpt_path)
+                logger.info(f"Periodic checkpoint extended and saved to {periodic_ckpt_path}")
+            except Exception as e_save_periodic: logger.error(f"Error extending periodic checkpoint: {e_save_periodic}")
+
+        if (epoch + 1) % cfg.get('plot_every_n_epochs', 5) == 0 or (epoch + 1) == cfg['epochs']:
+             plot_training_curves(history, output_dir, metric_to_monitor)
+
+        early_stopping_patience = cfg.get('early_stopping_patience', 0)
+        if early_stopping_patience > 0 and epochs_no_improve >= early_stopping_patience:
+            logger.info(f"Early stopping triggered at epoch {epoch} after {epochs_no_improve} epochs with no improvement on '{metric_to_monitor}'. Best val metric: {best_val_metric:.4f}."); break
 
     logger.info("Training finished.")
-    plot_training_curves(history, cfg['output_dir']) # Final plots
+    if cfg.get('use_swa',False) and val_loader:
+        finetuner.finalize_swa(val_loader); logger.info("SWA model BN statistics finalized.")
+    plot_training_curves(history, output_dir, metric_to_monitor)
 
-    # --- Final Test ---
     if test_loader:
         logger.info("--- Running Final Test ---")
-        # Load best model for testing
-        best_model_path = os.path.join(cfg['output_dir'], "best_model.pth")
-        if os.path.exists(best_model_path):
-            checkpoint = torch.load(best_model_path, map_location=device)
-            
-            # Potentially update img_size in cfg if best model was saved with a different size
-            saved_img_size = checkpoint.get('current_img_size')
-            if saved_img_size and tuple(saved_img_size) != current_img_size:
-                logger.info(f"Best model used image size {saved_img_size}. Re-creating test loader if necessary.")
-                current_img_size = tuple(saved_img_size)
-                cfg['img_size'] = list(current_img_size)
-                _, _, test_loader = get_data_loaders(cfg, current_img_size, class_names=class_names) # Recreate with correct size
-
-
-            # Re-setup model for test (in case of compilation, etc.)
-            # Ensure model is created with the correct img_size from the checkpoint
-            test_model, _, _ = setup_model_optimizer_scheduler(cfg, device, cfg['num_classes'])
-            test_model.load_state_dict(checkpoint['model_state_dict'])
-            logger.info(f"Loaded best model from {best_model_path} for testing.")
-
-            # Use EMA weights for testing if they were used for validation best
-            final_eval_model = test_model
-            if cfg.get('use_ema', False) and checkpoint.get('ema_state_dict'):
-                logger.info("Applying EMA weights for final testing.")
-                # Create a temporary EMA object and load its state
-                temp_ema = EMA(test_model, decay=cfg['ema_decay']) # Decay value doesn't matter here
-                temp_ema.shadow = checkpoint['ema_state_dict']['shadow']
-                temp_ema.num_updates = checkpoint['ema_state_dict']['num_updates'] # Not strictly needed for apply_shadow
-                temp_ema.apply_shadow() # test_model now has EMA weights
-                # final_eval_model is already test_model which now has EMA weights
-            
-            final_eval_model.eval()
-            all_test_preds = []
-            all_test_targets = []
-
-            with torch.no_grad():
-                for images, targets in test_loader:
-                    images, targets = images.to(device), targets.to(device)
-                    if cfg.get('channels_last', True) and not (cfg.get('use_ema') and checkpoint.get('ema_state_dict')): # EMA model might not be compiled
-                        images = images.to(memory_format=torch.channels_last)
-
-                    with autocast(enabled=cfg['amp_enabled']):
-                        if cfg.get('use_tta', True):
-                            outputs_probs = test_time_augmentation(final_eval_model, images, device, num_augmentations=cfg['tta_num_augmentations'])
-                            # outputs_probs are softmaxed probabilities
-                            all_test_preds.append(outputs_probs.cpu())
-                        else:
-                            outputs_logits = final_eval_model(images)
-                            all_test_preds.append(F.softmax(outputs_logits, dim=1).cpu())
-                    all_test_targets.append(targets.cpu())
-            
-            if cfg.get('use_ema', False) and checkpoint.get('ema_state_dict'):
-                 temp_ema.restore() # Restore original weights to test_model if needed elsewhere, though it's end of script
-
-            all_test_preds = torch.cat(all_test_preds)
-            all_test_targets = torch.cat(all_test_targets)
-            
-            test_metrics = calculate_metrics(all_test_preds, all_test_targets, num_classes=cfg['num_classes'], class_names=class_names)
-            logger.info(f"Test Results: Acc={test_metrics['accuracy']:.4f}, F1_w={test_metrics['f1_score_weighted']:.4f}, F1_m={test_metrics['f1_score_macro']:.4f}")
-            logger.info("Per-class F1 Scores:")
-            for i, name in enumerate(class_names):
-                logger.info(f"  {name}: {test_metrics[name+'_f1_score']:.4f} (Support: {test_metrics[name+'_support']})")
-
-            plot_confusion_matrix(test_metrics['confusion_matrix'], class_names, cfg['output_dir'])
-            
-            # Save classification report
-            report_str = classification_report(all_test_targets.numpy(), all_test_preds.argmax(dim=1).numpy(), 
-                                               target_names=class_names, zero_division=0)
-            with open(os.path.join(cfg['output_dir'], "classification_report.txt"), 'w') as f:
-                f.write(report_str)
-            logger.info("Classification report saved.")
-
+        test_model_to_use = None; test_model_source_info = "Unknown"
+        if cfg.get('use_swa', False) and finetuner.swa_enabled:
+            logger.info("Using SWA model for final test.")
+            test_model_to_use = finetuner.get_model_for_inference(use_swa=True).to(device)
+            test_model_source_info = "SWA Model"
         else:
-            logger.warning("Best model checkpoint not found. Skipping final test.")
-    else:
-        logger.info("Test loader not available. Skipping final test.")
+            best_model_final_path = os.path.join(checkpoints_save_dir, cfg['best_model_filename'])
+            if os.path.exists(best_model_final_path):
+                logger.info(f"Loading best model from {best_model_final_path} for testing.")
+                chkpt_test = torch.load(best_model_final_path, map_location=device)
+                test_img_size_cfg = chkpt_test.get('config_runtime', {}).get('img_size', cfg['img_size'])
+                test_img_size = tuple(test_img_size_cfg) if isinstance(test_img_size_cfg, list) else test_img_size_cfg
+                hvt_params_test = cfg.get('hvt_params_for_model_init',{}); 
+                hvt_params_test.update({'img_size':test_img_size, 'num_classes':cfg['num_classes']})
+                
+                # Same list of unexpected_params as used in setup_model_optimizer_scheduler
+                unexpected_params_test = [
+                    'spectral_channels', 'patch_size', 
+                    'embed_dim_rgb', 'embed_dim_spectral',
+                    'depths', 'num_heads', 'mlp_ratio', 'qkv_bias',
+                    'model_drop_rate', 'attn_drop_rate', 'drop_path_rate',
+                    'norm_layer_name', 'use_dfca', 'use_gradient_checkpointing',
+                    'ssl_enable_mae', 'ssl_enable_contrastive', 'enable_consistency_loss_heads',
+                    'dfca_embed_dim_match_rgb', 'dfca_num_heads', 'dfca_drop_rate', 'dfca_use_disease_mask',
+                    'ssl_mae_mask_ratio', 'ssl_mae_decoder_dim', 'ssl_mae_norm_pix_loss',
+                    'ssl_contrastive_projector_dim', 'ssl_contrastive_projector_depth',
+                    'layer_wise_lr_decay',
+                    'img_size' # Added based on TypeError
+                ]
+                for param_name_test in unexpected_params_test:
+                    if param_name_test in hvt_params_test:
+                        popped_value_test = hvt_params_test.pop(param_name_test)
+                        logger.info(f"Removed '{param_name_test}' (value: {popped_value_test}) from HVT params for test model creation.")
+                
+                logger.info(f"Final HVT params for test create_disease_aware_hvt: {hvt_params_test}")
+                _temp_test_model = create_disease_aware_hvt(**hvt_params_test).to(device)
+                _temp_test_model.load_state_dict(chkpt_test['model_state_dict'])
+                test_model_to_use = _temp_test_model; test_model_source_info = "Best Checkpoint (Base Model)"
+                if cfg.get('use_ema',False) and chkpt_test.get('ema_state_dict') and chkpt_test['ema_state_dict']['shadow']:
+                    logger.info("Applying EMA weights from best checkpoint for testing.")
+                    ema_for_test = EMA(test_model_to_use, decay=cfg.get('ema_decay',0.9999))
+                    ema_for_test.shadow = chkpt_test['ema_state_dict']['shadow']
+                    for name_sh_test in ema_for_test.shadow:
+                        if name_sh_test in dict(test_model_to_use.named_parameters()):
+                            ref_param_test = dict(test_model_to_use.named_parameters())[name_sh_test]
+                            ema_for_test.shadow[name_sh_test] = ema_for_test.shadow[name_sh_test].to(device=ref_param_test.device, dtype=ref_param_test.dtype)
+                    ema_for_test.apply_shadow(); test_model_source_info = "Best Checkpoint (EMA Applied)"
+            else:
+                logger.warning("No best model checkpoint found. Using last state of trainer's base model (if available).")
+                test_model_to_use = finetuner.get_model_for_inference(use_swa=False).to(device)
+                test_model_source_info = "Trainer's Last Base Model State"
+                if cfg.get('use_ema',False) and ema_model: ema_model.apply_shadow(); test_model_source_info += " (Current EMA Applied)"
 
-    logger.info("Process completed.")
-
+        if test_model_to_use:
+            logger.info(f"Testing with model source: {test_model_source_info}")
+            original_trainer_model_ref_for_test = finetuner.model
+            finetuner.model = test_model_to_use; finetuner.model.eval()
+            _, test_metrics_results = finetuner.validate_one_epoch(test_loader, class_names, use_swa=False) 
+            finetuner.model = original_trainer_model_ref_for_test
+            if cfg.get('use_ema',False) and ema_model and "Current EMA Applied" in test_model_source_info: ema_model.restore()
+            logger.info(f"Final Test Results: Accuracy={test_metrics_results.get('accuracy',0):.4f}, F1_Macro={test_metrics_results.get('f1_macro',0):.4f}, F1_Weighted={test_metrics_results.get('f1_weighted',0):.4f}")
+            if 'confusion_matrix' in test_metrics_results: plot_confusion_matrix_main(test_metrics_results['confusion_matrix'], class_names, output_dir, "test_confusion_matrix.png")
+            with open(os.path.join(output_dir, "test_metrics_summary.txt"), 'w') as f_report_final:
+                f_report_final.write(f"Tested Model Source: {test_model_source_info}\n")
+                for k_met_final, v_met_final in test_metrics_results.items():
+                    if k_met_final != 'confusion_matrix': f_report_final.write(f"{k_met_final}: {v_met_final}\n")
+            logger.info(f"Test metrics summary saved to {os.path.join(output_dir, 'test_metrics_summary.txt')}")
+        else: logger.error("No model could be prepared for final testing.")
+    else: logger.info("Test loader not available. Skipping final test.")
+    logger.info(f"Process completed. All results, logs, and checkpoints are in: {output_dir}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Finetune HVT for Cotton Leaf Diseases")
-    parser.add_argument('--config', type=str, help="Path to YAML configuration file (optional)")
-    # Allow overriding specific config values from command line
-    parser.add_argument('--train_dir', type=str, help="Path to training data directory")
-    parser.add_argument('--val_dir', type=str, help="Path to validation data directory")
-    parser.add_argument('--test_dir', type=str, help="Path to test data directory")
-    parser.add_argument('--output_dir', type=str, help="Directory to save results and logs")
-    parser.add_argument('--epochs', type=int, help="Number of training epochs")
-    parser.add_argument('--batch_size', type=int, help="Batch size for training")
-    parser.add_argument('--lr_head', type=float, help="Learning rate for model head")
-    parser.add_argument('--lr_backbone', type=float, help="Learning rate for model backbone")
-    parser.add_argument('--pretrained_weights_path', type=str, help="Path to pretrained model weights")
-
+    parser = argparse.ArgumentParser(description="Finetune HVT for Cotton Leaf Diseases - High Performance V2")
+    parser.add_argument('--user_config_yaml', type=str, help="Path to user's YAML (overrides default config from module)")
+    parser.add_argument('--data_root_override', type=str, help="Override data_root path")
+    parser.add_argument('--output_dir_base_override', type=str, help="Override base for output_dir (PACKAGE_ROOT_PATH in config)")
+    parser.add_argument('--resume_checkpoint_override', type=str, nargs='?', const=None, help="Override resume_from_checkpoint path. No arg or empty string disables resume.")
+    parser.add_argument('--epochs_override', type=int, help="Override number of epochs")
+    parser.add_argument('--batch_size_override', type=int, help="Override batch size")
+    parser.add_argument('--lr_override', type=float, help="Override onecycle_max_lr (if using OneCycleLR)")
 
     args = parser.parse_args()
-
-    # Update config with CLI args if provided
-    cfg = load_enhanced_config() # Load defaults first
-    if args.config:
-        try:
-            with open(args.config, 'r') as f:
-                user_yaml_cfg = yaml.safe_load(f)
-            cfg.update(user_yaml_cfg) # User YAML overrides defaults
-        except FileNotFoundError:
-            print(f"Warning: Config file {args.config} not found. Using default config.")
-        except Exception as e:
-            print(f"Error loading config file {args.config}: {e}. Using default config.")
-
-
-    cli_args_dict = {k: v for k, v in vars(args).items() if v is not None and k != 'config'}
-    cfg.update(cli_args_dict) # CLI args override YAML and defaults
-
-    # Critical check for dataset paths
-    if not cfg.get('train_dir') or not cfg.get('val_dir'):
-        print("ERROR: 'train_dir' and 'val_dir' must be specified either in config or via CLI. Exiting.")
-        sys.exit(1)
     
-    # Initialize dynamic parts of config, e.g. progressive resize schedule based on total epochs
-    total_epochs_for_schedule = cfg['epochs']
-    new_resize_schedule = {}
-    # Current schedule in load_enhanced_config uses absolute epochs. If fractional needed:
-    # example_schedule = {0: [224,224], 0.33: [256,256], 0.66: [384,384]}
-    # for key_epoch_frac, size_val in example_schedule.items():
-    #    actual_epoch = int(key_epoch_frac * total_epochs_for_schedule)
-    #    new_resize_schedule[actual_epoch] = size_val
-    # cfg['resize_schedule'] = new_resize_schedule
-    # For now, using the absolute epochs from config is fine.
+    cfg_loaded = main_config_from_phase4.copy() 
+    
+    if args.user_config_yaml:
+        try:
+            with open(args.user_config_yaml, 'r') as f: user_yaml_cfg = yaml.safe_load(f)
+            cfg_loaded.update(user_yaml_cfg) 
+            print(f"Applied user config from YAML: {args.user_config_yaml}")
+        except FileNotFoundError: print(f"Warning: User YAML config file '{args.user_config_yaml}' not found.")
+        except Exception as e_yaml: print(f"Error loading user YAML config '{args.user_config_yaml}': {e_yaml}.")
 
-    main(cfg_path=None) # Pass None as cfg is already prepared
+    if args.data_root_override: cfg_loaded['data_root'] = args.data_root_override
+    if args.output_dir_base_override: cfg_loaded['PACKAGE_ROOT_PATH'] = args.output_dir_base_override
+    if args.resume_checkpoint_override is not None: cfg_loaded['resume_from_checkpoint'] = args.resume_checkpoint_override
+    if args.epochs_override is not None: cfg_loaded['epochs'] = args.epochs_override
+    if args.batch_size_override is not None: cfg_loaded['batch_size'] = args.batch_size_override
+    if args.lr_override is not None: cfg_loaded['onecycle_max_lr'] = args.lr_override 
+
+    if cfg_loaded['device'] == 'cpu' and cfg_loaded.get('num_workers',0) > 1 :
+         print(f"Warning: num_workers ({cfg_loaded.get('num_workers',0)}) > 1 for CPU training. Consider 0 or 1.")
+    if cfg_loaded.get('num_workers',0) == 0 and cfg_loaded.get('prefetch_factor'): cfg_loaded['prefetch_factor'] = None
+    
+    main(cfg_loaded)

@@ -1,0 +1,31 @@
+2025-06-02 06:08:47 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_high_performance_v2/finetune_hvt_high_performance_v2_20250602_060847.log. Logger 'root' Effective Level: INFO
+2025-06-02 06:08:47 - root - INFO - [main:510] - Starting finetuning process (High Performance V2 Strategy):
+2025-06-02 06:08:47 - root - INFO - [main:517] -   seed: 42
+2025-06-02 06:08:47 - root - INFO - [main:517] -   device: cuda
+2025-06-02 06:08:47 - root - INFO - [main:517] -   log_dir: logs_finetune_high_performance_v2
+2025-06-02 06:08:47 - root - INFO - [main:517] -   resume_from_checkpoint: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth
+2025-06-02 06:08:47 - root - INFO - [main:517] -   data_root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection
+2025-06-02 06:08:47 - root - INFO - [main:517] -   img_size: (512, 512)
+2025-06-02 06:08:47 - root - INFO - [main:517] -   num_classes: 7
+2025-06-02 06:08:47 - root - INFO - [main:517] -   epochs: 250
+2025-06-02 06:08:47 - root - INFO - [main:517] -   batch_size: 6
+2025-06-02 06:08:47 - root - INFO - [main:517] -   accumulation_steps: 8
+2025-06-02 06:08:47 - root - INFO - [main:517] -   optimizer: AdamW
+2025-06-02 06:08:47 - root - INFO - [main:517] -   scheduler: OneCycleLR
+2025-06-02 06:08:47 - root - INFO - [main:517] -   loss_function: combined
+2025-06-02 06:08:47 - root - INFO - [main:517] -   metric_to_monitor_early_stopping: f1_macro
+2025-06-02 06:08:47 - root - INFO - [main:517] -   early_stopping_patience: 40
+2025-06-02 06:08:47 - root - INFO - [main:517] -   progressive_unfreezing: True
+2025-06-02 06:08:47 - root - INFO - [main:517] -   freeze_backbone_epochs: 3
+2025-06-02 06:08:47 - root - INFO - [main:517] -   use_ema: True
+2025-06-02 06:08:47 - root - INFO - [main:517] -   use_swa: True
+2025-06-02 06:08:47 - root - INFO - [main:517] -   amp_enabled: True
+2025-06-02 06:08:47 - root - INFO - [main:519] -   HVT Model Key Params: patch_size=14, depths=[3, 6, 24, 3], embed_dim_rgb=192
+2025-06-02 06:08:47 - root - INFO - [main:526] - Device: cuda. Seed: 42. CudNN Benchmark: True.
+2025-06-02 06:08:47 - root - INFO - [main:544] - Arguments for Dummy SARCLD2024Dataset: {'root_dir': '/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection', 'split': 'train', 'img_size': (512, 512), 'train_split_ratio': 0.9, 'normalize_for_model': True, 'original_dataset_name': 'Original Dataset', 'augmented_dataset_name': 'Augmented Dataset', 'random_seed': 42}
+2025-06-02 06:08:47 - root - WARNING - [main:549] - TypeError creating dummy dataset: SARCLD2024Dataset.__init__() got an unexpected keyword argument 'normalize_for_model'. This indicates an argument mismatch with SARCLD2024Dataset.__init__ in dataset.py. Ensure dataset.py is up-to-date and accepts all passed arguments (e.g., 'normalize_for_model'). Using generic class names.
+2025-06-02 06:08:47 - root - INFO - [main:557] - Class names (7 total): ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6']
+2025-06-02 06:08:47 - root - INFO - [get_data_loaders:211] - Creating DataLoaders with image size: (512, 512)
+2025-06-02 06:08:47 - root - INFO - [get_data_loaders:212] - SARCLD2024Dataset will use its internal base transforms. External train_aug_obj/eval_transform are not passed to its constructor.
+2025-06-02 06:08:47 - root - INFO - [get_data_loaders:239] - Arguments for Train SARCLD2024Dataset: {'root_dir': '/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection', 'split': 'train', 'img_size': (512, 512), 'train_split_ratio': 0.9, 'normalize_for_model': True, 'original_dataset_name': 'Original Dataset', 'augmented_dataset_name': 'Augmented Dataset', 'random_seed': 42}
+2025-06-02 06:08:47 - root - ERROR - [get_data_loaders:261] - TypeError during dataset instantiation: SARCLD2024Dataset.__init__() got an unexpected keyword argument 'normalize_for_model'. This usually means an argument mismatch between main.py and SARCLD2024Dataset.__init__ in dataset.py. Ensure 'normalize_for_model' and other arguments are correctly defined in dataset.py.
