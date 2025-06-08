@@ -11,259 +11,169 @@ try:
     PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
     PROJECT_ROOT_PATH = os.path.dirname(PACKAGE_ROOT)
 except NameError:
-    PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25" # Fallback, adjust if necessary
+    PROJECT_ROOT_PATH = "/teamspace/studios/this_studio/cvpr25"
     PACKAGE_ROOT = os.path.join(PROJECT_ROOT_PATH, "phase4_finetuning")
-    _config_module_logger.warning(f"Guessed PROJECT_ROOT_PATH: {PROJECT_ROOT_PATH} and PACKAGE_ROOT: {PACKAGE_ROOT}")
+    _config_module_logger.warning(f"Guessed PROJECT_ROOT_PATH & PACKAGE_ROOT.")
 
-DEFAULT_RANDOM_SEED = 42
+DEFAULT_SEED = 42
 DEFAULT_DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DEFAULT_DATASET_BASE_PATH = os.path.join(PROJECT_ROOT_PATH, "SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection")
 DEFAULT_NUM_CLASSES = 7
 DEFAULT_ORIGINAL_DATASET_NAME = "Original Dataset"
 DEFAULT_AUGMENTED_DATASET_NAME = "Augmented Dataset"
-DEFAULT_TRAIN_SPLIT_RATIO_FINETUNE = 0.8
+DEFAULT_TRAIN_SPLIT_RATIO_FINETUNE = 0.85 # From Guide Phase 3 Opt
+DEFAULT_IMG_SIZE_FINETUNE = (512, 512) # Guide Phase 1 Opt
 
-phase3_config_imported = False
-phase3_cfg = {}
-try:
-    from phase3_pretraining.config import config as phase3_base_config_dict_imported
-    phase3_cfg = phase3_base_config_dict_imported.copy()
-    phase3_config_imported = True
-    _config_module_logger.info("Attempted to import base config from phase3_pretraining.config")
-except Exception as e:
-    _config_module_logger.warning(f"Could not import or process config from phase3_pretraining: {e}. Using Phase 4 defaults for inherited values.")
-    phase3_cfg = {}
+DEFAULT_ENABLE_TORCH_COMPILE = False # Safer for T4
+DEFAULT_TORCH_COMPILE_MODE = "reduce-overhead"
+DEFAULT_MATMUL_PRECISION = 'high'
+DEFAULT_CUDNN_BENCHMARK = True
 
-SEED = phase3_cfg.get('seed', DEFAULT_RANDOM_SEED)
-DEVICE_RESOLVED = phase3_cfg.get('device', DEFAULT_DEVICE)
-DATA_ROOT_RESOLVED = phase3_cfg.get('data_root', DEFAULT_DATASET_BASE_PATH)
-NUM_CLASSES_RESOLVED = phase3_cfg.get('num_classes', DEFAULT_NUM_CLASSES)
-ORIGINAL_DATASET_NAME_RESOLVED = phase3_cfg.get('original_dataset_name', DEFAULT_ORIGINAL_DATASET_NAME)
-
-# Path to the SSL pretrained backbone (if used for initial training before the checkpoint we are resuming)
-# This path is relevant if `resume_from_checkpoint` is NOT set, or if the resumed checkpoint was only partial.
-# For full finetune resume, this specific SSL checkpoint might be less directly used if the finetune checkpoint has all weights.
-resolved_ssl_checkpoint_path_for_initial_pretraining = "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth"
-if not os.path.exists(resolved_ssl_checkpoint_path_for_initial_pretraining):
-    _config_module_logger.warning(f"SSL Checkpoint path for initial pretraining not found: {resolved_ssl_checkpoint_path_for_initial_pretraining}.")
-
-# Path to the finetuning checkpoint to resume from
-# THIS IS THE KEY FOR RESUMING THE FINETUNING PROCESS
-RESUME_FROM_FINETUNE_CHECKPOINT_PATH = "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_optimized_strategy_v1_stable/checkpoints_optimized_strategy_v1_stable/best_finetuned_hvt_optimized_strategy_v1_stable.pth"
-if not os.path.exists(RESUME_FROM_FINETUNE_CHECKPOINT_PATH):
-    _config_module_logger.warning(f"Target resume checkpoint NOT FOUND: {RESUME_FROM_FINETUNE_CHECKPOINT_PATH}. Training will start from scratch or SSL backbone if configured.")
-    # Set to None if not found, so main.py logic for resuming is skipped.
-    # RESUME_FROM_FINETUNE_CHECKPOINT_PATH = None # Or handle this in main.py
-
-_default_hvt_arch_for_ssl_ckpt = {
-    "patch_size": 14, "embed_dim_rgb": 192, "embed_dim_spectral": 192, "spectral_channels": 0,
-    "depths": [3, 6, 24, 3], "num_heads": [6, 12, 24, 48], "mlp_ratio": 4.0, "qkv_bias": True,
-    "model_drop_rate": 0.0, "attn_drop_rate": 0.0, "drop_path_rate": 0.1, "norm_layer_name": "LayerNorm",
-    "use_dfca": False, "use_gradient_checkpointing": True,
+# Fallback HVT Architecture if Phase 3 config is missing or doesn't have HVT params.
+# Importantly, set patch_size compatible with default fine-tuning img_size (512x512)
+DEFAULT_HVT_ARCH_PARAMS_FALLBACK = {
+    "patch_size": 16, # 512 / 16 = 32 (divisible by 8 for 4 stages)
+    "embed_dim_rgb": 192, "spectral_channels": 0, # Assuming RGB-only from SSL
+    "depths": [3, 6, 24, 3], # Example HVT-XL like depths
+    "num_heads": [6, 12, 24, 48], # For embed_dim 192 base (head_dim=32)
+    "mlp_ratio": 4.0, "qkv_bias": True,
+    "model_drop_rate": 0.1, "attn_drop_rate": 0.0, "drop_path_rate": 0.1,
+    "norm_layer_name": "LayerNorm", "use_dfca": False,
+    "use_gradient_checkpointing": True, # Essential for T4 with large models
     "ssl_enable_mae": False, "ssl_enable_contrastive": False, "enable_consistency_loss_heads": False,
 }
-HVT_ARCH_PARAMS_FROM_SSL_SOURCE = phase3_cfg.get('hvt_params_for_backbone', _default_hvt_arch_for_ssl_ckpt).copy()
 
-if HVT_ARCH_PARAMS_FROM_SSL_SOURCE == _default_hvt_arch_for_ssl_ckpt and phase3_config_imported and 'hvt_params_for_backbone' not in phase3_cfg:
-     _config_module_logger.warning("Phase 3 config imported but 'hvt_params_for_backbone' was missing. Using Phase 4's _default_hvt_arch_for_ssl_ckpt. VERIFY THESE for SSL checkpoint compatibility!")
-elif not phase3_config_imported:
-    _config_module_logger.warning("Phase 3 config not imported. Using Phase 4's _default_hvt_arch_for_ssl_ckpt. VERIFY THESE for SSL checkpoint compatibility!")
+phase3_cfg_imported_dict = {}
+try:
+    from phase3_pretraining.config import config as imported_phase3_config
+    phase3_cfg_imported_dict = imported_phase3_config.copy()
+    _config_module_logger.info("Successfully imported base config from 'phase3_pretraining.config'.")
+except ImportError: _config_module_logger.warning("Could not import config from 'phase3_pretraining.config'.")
 
+# --- Resolve Parameters for Fine-tuning ---
+SEED_final = phase3_cfg_imported_dict.get('seed', DEFAULT_SEED)
+DEVICE_final = phase3_cfg_imported_dict.get('device', DEFAULT_DEVICE) # Use device from Phase 3 if available
+DATA_ROOT_final = phase3_cfg_imported_dict.get('data_root', DEFAULT_DATASET_BASE_PATH)
+NUM_CLASSES_final = phase3_cfg_imported_dict.get('num_classes', DEFAULT_NUM_CLASSES)
+ORIGINAL_DATASET_NAME_final = phase3_cfg_imported_dict.get('original_dataset_name', DEFAULT_ORIGINAL_DATASET_NAME)
+
+ENABLE_TORCH_COMPILE_final = phase3_cfg_imported_dict.get('enable_torch_compile', DEFAULT_ENABLE_TORCH_COMPILE)
+TORCH_COMPILE_MODE_final = phase3_cfg_imported_dict.get('torch_compile_mode', DEFAULT_TORCH_COMPILE_MODE)
+MATMUL_PRECISION_final = phase3_cfg_imported_dict.get('matmul_precision', DEFAULT_MATMUL_PRECISION)
+CUDNN_BENCHMARK_final = phase3_cfg_imported_dict.get('cudnn_benchmark', DEFAULT_CUDNN_BENCHMARK)
+
+# HVT Architecture: MUST match SSL pre-trained model for weight loading
+HVT_PARAMS_FOR_MODEL_INIT_final = phase3_cfg_imported_dict.get('hvt_params_for_backbone', DEFAULT_HVT_ARCH_PARAMS_FALLBACK).copy()
+if HVT_PARAMS_FOR_MODEL_INIT_final == DEFAULT_HVT_ARCH_PARAMS_FALLBACK and phase3_cfg_imported_dict and 'hvt_params_for_backbone' not in phase3_cfg_imported_dict:
+    _config_module_logger.warning("HVT params ('hvt_params_for_backbone') not in imported Phase 3 config. Using Phase 4 fallback HVT arch. VERIFY THIS!")
+elif not phase3_cfg_imported_dict:
+    _config_module_logger.warning("Phase 3 config not imported. Using Phase 4 fallback HVT arch. VERIFY THIS!")
+else:
+    _config_module_logger.info("Using HVT architecture parameters sourced from Phase 3 config for fine-tuning base.")
+
+# --- Apply Optimization Guide Tweaks to the sourced/fallback HVT Arch ---
+# Phase 1/2 Guide: Image Size 512x512, Patch Size 16
+config_img_size_ft = tuple(main_config_from_phase4.get("img_size", DEFAULT_IMG_SIZE_FINETUNE)) # Get target FT img_size from *this* file's dict later
+guide_patch_size = 16 # As per guide for 512px or if changing capacity
+if config_img_size_ft[0] % guide_patch_size != 0 or config_img_size_ft[1] % guide_patch_size != 0:
+    _config_module_logger.warning(f"Target fine-tune image size {config_img_size_ft} is not divisible by guide patch_size {guide_patch_size}. This may cause issues. Consider adjusting 'img_size' or HVT 'patch_size'.")
+HVT_PARAMS_FOR_MODEL_INIT_final['patch_size'] = guide_patch_size # Critical for compatibility with 512px
+# Guide Phase 2 Arch Tweaks (if applying them *on top* of SSL arch)
+# HVT_PARAMS_FOR_MODEL_INIT_final['embed_dim_rgb'] = 256 # Example
+# HVT_PARAMS_FOR_MODEL_INIT_final['num_heads'] = [8, 16, 32, 64] # Example
+# HVT_PARAMS_FOR_MODEL_INIT_final['depths'] = [2,2,18,2] # Example
+HVT_PARAMS_FOR_MODEL_INIT_final['model_drop_rate'] = 0.1 # Guide default for fine-tuning
+HVT_PARAMS_FOR_MODEL_INIT_final['drop_path_rate'] = 0.1  # Guide default for fine-tuning (guide Phase 2 suggests 0.05)
+HVT_PARAMS_FOR_MODEL_INIT_final['attn_drop_rate'] = HVT_PARAMS_FOR_MODEL_INIT_final.get('attn_drop_rate', 0.0) # Keep if from SSL
+HVT_PARAMS_FOR_MODEL_INIT_final['use_gradient_checkpointing'] = True # For T4
+HVT_PARAMS_FOR_MODEL_INIT_final['spectral_channels'] = 0 # Ensure RGB for this fine-tuning
+HVT_PARAMS_FOR_MODEL_INIT_final['use_dfca'] = False
+
+# SSL Pretrained Checkpoint Path (absolute)
+SSL_PRETRAINED_PATH_final = "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth"
+if not os.path.exists(SSL_PRETRAINED_PATH_final): _config_module_logger.error(f"CRITICAL: SSL Checkpoint NOT FOUND: '{SSL_PRETRAINED_PATH_final}'.")
 
 config = {
-    "seed": SEED, "device": DEVICE_RESOLVED,
-    "PACKAGE_ROOT_PATH": PACKAGE_ROOT, "PROJECT_ROOT_PATH": PROJECT_ROOT_PATH,
+    "seed": SEED_final, "device": DEVICE_final,
+    "PROJECT_ROOT_PATH": PROJECT_ROOT_PATH, "PACKAGE_ROOT_PATH": PACKAGE_ROOT,
+    "run_name_suffix": "ft_guide_p1_v3_fix",
+    "log_dir": "logs_finetune_guide", "log_file_finetune_base": "finetune_hvt",
+    "best_model_filename_base": "best_finetuned_hvt", "final_model_filename_base": "final_finetuned_hvt",
+    "checkpoint_save_dir_name": "checkpoints",
 
-    "log_dir": "logs_finetune_high_performance_v2", # New experiment name
-    "log_file_finetune": "finetune_hvt_high_performance_v2.log",
-    "best_model_filename": "best_finetuned_hvt_high_performance_v2.pth",
-    "final_model_filename": "final_finetuned_hvt_high_performance_v2.pth",
-    "checkpoint_save_dir_name": "checkpoints_high_performance_v2",
+    "enable_torch_compile": ENABLE_TORCH_COMPILE_final, "torch_compile_mode": TORCH_COMPILE_MODE_final,
+    "matmul_precision": MATMUL_PRECISION_final, "cudnn_benchmark": CUDNN_BENCHMARK_final,
 
-    "resume_from_checkpoint": RESUME_FROM_FINETUNE_CHECKPOINT_PATH, # Key for resuming
+    "ssl_pretrained_backbone_path": SSL_PRETRAINED_PATH_final,
+    "load_pretrained_backbone_from_ssl": True if SSL_PRETRAINED_PATH_final and os.path.exists(SSL_PRETRAINED_PATH_final) else False,
+    "resume_finetune_checkpoint_path": None, # Set path to resume a previous FT run
+    "load_optimizer_scheduler_on_resume": True,
+    "ssl_pretrain_img_size_fallback": (448, 448), # Image size of the actual SSL PE
 
-    "data_root": DATA_ROOT_RESOLVED,
-    "original_dataset_name": ORIGINAL_DATASET_NAME_RESOLVED,
-    "augmented_dataset_name": "Augmented Dataset",
-    "img_size": (512, 512), # Increased resolution for better feature extraction
-    "num_classes": NUM_CLASSES_RESOLVED,
-    "train_split_ratio": 0.9, # Use more data for training
-    "normalize_data": True,
+    "data_root": DATA_ROOT_final, "original_dataset_name": ORIGINAL_DATASET_NAME_final,
+    "augmented_dataset_name": None, # Guide doesn't specify using this for FT
+    "img_size": (512, 512), # Guide Phase 1
+    "num_classes": NUM_CLASSES_final,
+    "train_split_ratio": 0.85, # Guide Phase 3 (can start with 0.8 if preferred)
+    "normalize_data": True,    # Guide Phase 1: CRITICAL
     "use_weighted_sampler": True,
-    "weighted_sampler_mode": "inv_count", # More aggressive class balancing
-    "use_weighted_loss": True,
-    "focal_loss_alpha": 0.25, # Add focal loss parameters
-    "focal_loss_gamma": 2.0,
+    "weighted_sampler_mode": "sqrt_inv_count", # Guide Phase 3
+    "use_weighted_loss": True, # Often combined with sampler or as alternative
 
-    "num_workers": 6, # Increased for better data loading
-    "prefetch_factor": 3 if DEVICE_RESOLVED == 'cuda' and 6 > 0 else None,
+    "num_workers": 6, # From example config in guide
+    "prefetch_factor": 3 if DEVICE_final == 'cuda' and 6 > 0 else None,
 
-    "model_architecture_name": "DiseaseAwareHVT_HighPerformance_v2",
-    # `pretrained_checkpoint_path` is for SSL backbone if NOT resuming a full finetune checkpoint or if it's a partial one.
-    # If `resume_from_checkpoint` is a full finetune state, this SSL path might be secondary.
-    "pretrained_checkpoint_path": resolved_ssl_checkpoint_path_for_initial_pretraining,
-    "load_pretrained_backbone": True, # Can be set to False in main.py if resume_from_checkpoint is successful with full model state
+    "model_architecture_name": "DiseaseAwareHVT_Finetuned_Guide_P1P2_V3",
+    "hvt_params_for_model_init": HVT_PARAMS_FOR_MODEL_INIT_final,
+    "hvt_head_module_name": "classifier_head",
 
-    "hvt_params_for_model_init": {
-        **HVT_ARCH_PARAMS_FROM_SSL_SOURCE, # Base architecture
-        # Overrides for finetuning (should match the model structure of the checkpoint being resumed)
-        "model_drop_rate": 0.15, # Increased regularization
-        "drop_path_rate": 0.2, # Increased stochastic depth
-        "attn_drop_rate": 0.1, # Add attention dropout
-        "use_gradient_checkpointing": True,
-        "spectral_channels": HVT_ARCH_PARAMS_FROM_SSL_SOURCE.get("spectral_channels", 0),
-        # Add layer-wise learning rate decay
-        "layer_wise_lr_decay": 0.8,
-    },
+    "epochs": 150, # Guide Phase 2
+    "batch_size": 12,  # Guide Phase 1 (for 512px on T4)
+    "accumulation_steps": 4,  # Guide Phase 1 (Effective BS = 48)
+    "amp_enabled": True, "clip_grad_norm": 1.0, # Guide: 0.5 if unstable
+    "log_interval": 10,
 
-    "enable_torch_compile": True, # Enable for better performance
-    "torch_compile_mode": "max-autotune", # More aggressive optimization
-    "matmul_precision": 'high', 
-    "cudnn_benchmark": True,
+    "optimizer": "AdamW", "weight_decay": 0.01, # Guide "Optimized Config"
+    "optimizer_params": {"betas": (0.9, 0.999), "eps": 1e-8, "amsgrad": True}, # Guide "Optimized Config"
 
-    # Progressive unfreezing strategy
-    "freeze_backbone_epochs": 3, # Shorter initial freeze
-    "progressive_unfreezing": True, # Enable progressive unfreezing
-    "unfreezing_schedule": [3, 8, 15, 20], # Epochs to unfreeze layers
-    
-    "epochs": 250, # More epochs for better convergence
+    "freeze_backbone_epochs": 5, # Guide Phase 1
+    "lr_head_frozen_phase": 1e-3,       # Guide Phase 1
+    "lr_backbone_unfrozen_phase": 5e-5, # Guide Phase 1
+    "lr_head_unfrozen_phase": 5e-4,     # Guide Phase 1
 
-    "batch_size": 6, # Adjusted for higher resolution
-    "accumulation_steps": 8, # Effective BS 48
+    # Scheduler: Guide suggests OneCycleLR for "Optimized Config"
+    "scheduler": "OneCycleLR",
+    "onecycle_max_lr": 1e-3, # This will be a list per param group if LLRD not used, or global max
+    "onecycle_pct_start": 0.1,
+    "onecycle_div_factor": 25,
+    "onecycle_final_div_factor": 1e4,
+    "warmup_epochs": 10, # Guide Phase 2 (relevant if WarmupCosine is chosen)
+    "eta_min_lr": 1e-8, # For WarmupCosine
 
-    "amp_enabled": True, # Enable mixed precision for efficiency
-    "amp_opt_level": "O1", # Conservative mixed precision
-    "clip_grad_norm": 1.0, # Increased gradient clipping
+    "loss_function": "combined", # Guide "Optimized Config"
+    "loss_label_smoothing": 0.15, # Guide "Optimized Config"
+    "loss_weights": {"ce_weight": 0.7, "focal_weight": 0.3}, # Guide "Optimized Config"
+    "focal_loss_alpha": 0.25, "focal_loss_gamma": 2.0,
 
-    "optimizer": "AdamW",
-    "optimizer_params": {
-        "betas": (0.9, 0.999),
-        "eps": 1e-8, # More stable epsilon
-        "amsgrad": True # Use AMSGrad variant
-    },
-    "weight_decay": 0.01, # Reduced weight decay
-
-    # Improved learning rate schedule
-    "lr_head_frozen_phase": 3e-4, # Higher initial LR for head
-    "lr_backbone_unfrozen_phase": 5e-5, # Higher backbone LR
-    "lr_head_unfrozen_phase": 2e-4, # Higher head LR
-    
-    # Layer-wise learning rates
-    "use_layer_wise_lr": True,
-    "layer_wise_lr_multipliers": {
-        "head": 1.0,
-        "layer_4": 0.9,
-        "layer_3": 0.8,
-        "layer_2": 0.7,
-        "layer_1": 0.6
-    },
-
-    "scheduler": "OneCycleLR", # Better scheduler for higher accuracy
-    "onecycle_max_lr": 1e-3, # Peak learning rate
-    "onecycle_pct_start": 0.1, # 10% warmup
-    "onecycle_div_factor": 25, # Initial LR = max_lr / div_factor
-    "onecycle_final_div_factor": 1e4, # Final LR = initial_lr / final_div_factor
-    
-    # Backup cosine scheduler parameters
-    "warmup_epochs": 10,
-    "eta_min_lr": 1e-8,
-
-    # Advanced loss configuration
-    "loss_function": "combined", # Use combined loss
-    "loss_label_smoothing": 0.15, # Increased label smoothing
-    "loss_weights": {
-        "ce_weight": 0.7,
-        "focal_weight": 0.3
-    },
-
-    # Enhanced augmentation strategy
     "augmentations_enabled": True,
-    "augmentation_strategy": "aggressive_medical", # New aggressive strategy
-    "augmentation_severity": "high", # Increased severity
-    "mixup_alpha": 0.4, # Enable mixup
-    "cutmix_alpha": 1.0, # Enable cutmix
-    "cutmix_prob": 0.5, # Probability of applying cutmix
-    "rand_augment_n": 3, # RandAugment operations
-    "rand_augment_m": 12, # RandAugment magnitude
-    
-    # Test-time augmentation
-    "tta_enabled_val": True,
-    "tta_transforms": 8, # More TTA transforms
-    
-    # Advanced training techniques
-    "use_ema": True, # Exponential moving average
-    "ema_decay": 0.9999,
-    "use_swa": True, # Stochastic weight averaging
-    "swa_start_epoch": 200, # Start SWA in last 50 epochs
-    "swa_lr": 1e-5,
-    
-    # Knowledge distillation (if you have a teacher model)
-    "use_knowledge_distillation": False, # Set to True if available
-    "teacher_model_path": None,
-    "distillation_alpha": 0.7,
-    "distillation_temperature": 4.0,
+    "augmentation_strategy": "aggressive_medical", # Guide Phase 2
+    "augmentation_severity": "high", # Guide Phase 2
+
+    "mixup_alpha": 0.4, "cutmix_alpha": 1.0, "cutmix_prob": 0.5, # From Guide
+    # rand_augment_n, rand_augment_m - these would be used by a RandAugment transform
 
     "evaluate_every_n_epochs": 1,
-    "early_stopping_patience": 40, # Increased patience
+    "early_stopping_patience": 25, # Guide Phase 2 (was 40, 25 is good)
     "metric_to_monitor_early_stopping": "f1_macro",
-    "min_delta_early_stopping": 1e-4, # Minimum improvement threshold
+    "min_delta_early_stopping": 1e-4,
 
-    "ssl_pretrain_img_size_fallback": tuple(phase3_cfg.get('pretrain_img_size', (512,512))), # Updated
+    "tta_enabled_val": True, # Guide Phase 3
+    "tta_transforms": 8, # Guide Phase 3
 
-    # Enhanced debugging and monitoring
-    "debug_nan_detection": True,
-    "stop_on_nan_threshold": 3, # More strict NaN detection
-    "monitor_gradients": True,
-    "gradient_log_interval": 25, # More frequent logging
-    "save_checkpoint_every_n_epochs": 5, # More frequent checkpointing
-    
-    # Learning rate finder
-    "use_lr_finder": False, # Set True for initial LR search
-    "lr_finder_start_lr": 1e-7,
-    "lr_finder_end_lr": 1e-1,
-    "lr_finder_num_iter": 100,
-    
-    # Advanced validation
-    "cross_validation_folds": 0, # Set > 0 for k-fold CV
-    "stratified_sampling": True,
-    
-    # Model ensembling
-    "save_top_k_models": 5, # Save top 5 models for ensembling
-    "ensemble_inference": False, # Set True for final inference
-    
-    # Additional regularization
-    "dropout_schedule": { # Progressive dropout scheduling
-        0: 0.1,
-        50: 0.15,
-        100: 0.2,
-        150: 0.15,
-        200: 0.1
-    },
-    
-    # Memory optimization
-    "max_memory_usage": 0.9, # 90% GPU memory limit
-    "empty_cache_frequency": 10, # Clear cache every N batches
+    "use_ema": True, "ema_decay": 0.9999, # From guide
+    "use_swa": True, "swa_start_epoch": int(150 * 0.8), "swa_lr": 1e-5, # Guide SWA start
 }
-
 NUM_CLASSES = config['num_classes']
-
-_config_module_logger.info(f"Phase 4 Config (High Performance v2) Loaded.")
-if config['resume_from_checkpoint'] and os.path.exists(config['resume_from_checkpoint']):
-    _config_module_logger.info(f"Attempting to resume from: {config['resume_from_checkpoint']}")
-else:
-    _config_module_logger.info(f"No valid resume_from_checkpoint specified or path not found. Will train from scratch or SSL backbone.")
-
-_config_module_logger.info(f"Key Performance Optimizations Enabled:")
-_config_module_logger.info(f"  - Higher Resolution: {config['img_size']}")
-_config_module_logger.info(f"  - Progressive Unfreezing: {config['progressive_unfreezing']}")
-_config_module_logger.info(f"  - OneCycle LR Scheduler: {config['scheduler']}")
-_config_module_logger.info(f"  - Mixed Precision: {config['amp_enabled']}")
-_config_module_logger.info(f"  - Advanced Augmentations: {config['augmentation_strategy']}")
-_config_module_logger.info(f"  - EMA: {config['use_ema']}, SWA: {config['use_swa']}")
-_config_module_logger.info(f"  - Combined Loss Function: {config['loss_function']}")
-_config_module_logger.info(f"AMP Enabled: {config['amp_enabled']}, Opt Level: {config.get('amp_opt_level', 'N/A')}")
-_config_module_logger.info(f"LRs - Frozen Head: {config['lr_head_frozen_phase']:.1e}; Unfrozen BB: {config['lr_backbone_unfrozen_phase']:.1e}, Head: {config['lr_head_unfrozen_phase']:.1e}")
-_config_module_logger.info(f"Augmentation Strategy: {config['augmentation_strategy']}, Severity: {config.get('augmentation_severity','N/A')}")
-_config_module_logger.info(f"Total epochs set to: {config['epochs']}")
-_config_module_logger.info(f"Effective batch size: {config['batch_size'] * config['accumulation_steps']}")
-_config_module_logger.info(f"Image resolution: {config['img_size']}")
+_config_module_logger.info(f"--- Phase 4 Config (Guide - Quick Wins + Phase 2 Target) ---")
+_config_module_logger.info(f"Image Size: {config['img_size']}, HVT Patch Size: {config['hvt_params_for_model_init']['patch_size']}")
+_config_module_logger.info(f"Scheduler: {config['scheduler']}")

@@ -1,0 +1,160 @@
+2025-06-02 18:01:06 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune_guide/ft_guide_p1_final_20250602_180106/finetune_hvt_20250602_180106.log. Logger 'root' Effective Level: DEBUG
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:317] - ======== Starting Phase 4 Fine-tuning (Run: ft_guide_p1_final_20250602_180106) ========
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:318] - Full effective configuration for this run:
+seed: 42
+device: cuda
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+run_name_suffix: ft_guide_p1_final
+log_dir: logs_finetune_guide
+log_file_finetune_base: finetune_hvt
+best_model_filename_base: best_finetuned_hvt
+final_model_filename_base: final_finetuned_hvt
+checkpoint_save_dir_name: checkpoints
+enable_torch_compile: false
+torch_compile_mode: reduce-overhead
+matmul_precision: high
+cudnn_benchmark: true
+ssl_pretrained_backbone_path: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+load_pretrained_backbone_from_ssl: false
+resume_finetune_checkpoint_path: null
+load_optimizer_scheduler_on_resume: false
+ssl_pretrain_img_size_fallback: !!python/tuple
+- 448
+- 448
+data_root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+  for Cotton Leaf Disease Detection
+original_dataset_name: Original Dataset
+augmented_dataset_name: null
+img_size: !!python/tuple
+- 512
+- 512
+num_classes: 7
+train_split_ratio: 0.8
+normalize_data: true
+use_weighted_sampler: true
+weighted_sampler_mode: inv_freq
+use_weighted_loss: true
+num_workers: 4
+prefetch_factor: 2
+model_architecture_name: DiseaseAwareHVT_Finetuned_GuideP1_Final
+hvt_params_for_model_init:
+  patch_size: 14
+  embed_dim_rgb: 192
+  embed_dim_spectral: 192
+  spectral_channels: 0
+  depths:
+  - 3
+  - 6
+  - 24
+  - 3
+  num_heads:
+  - 6
+  - 12
+  - 24
+  - 48
+  mlp_ratio: 4.0
+  qkv_bias: true
+  model_drop_rate: 0.1
+  attn_drop_rate: 0.0
+  drop_path_rate: 0.1
+  norm_layer_name: LayerNorm
+  use_dfca: false
+  use_gradient_checkpointing: true
+  ssl_enable_mae: false
+  ssl_enable_contrastive: false
+  enable_consistency_loss_heads: false
+  dfca_embed_dim_match_rgb: true
+  dfca_num_heads: 32
+  dfca_drop_rate: 0.1
+  dfca_use_disease_mask: true
+  ssl_mae_mask_ratio: 0.75
+  ssl_mae_decoder_dim: 64
+  ssl_mae_norm_pix_loss: true
+  ssl_contrastive_projector_dim: 128
+  ssl_contrastive_projector_depth: 2
+hvt_head_module_name: classifier_head
+epochs: 75
+batch_size: 12
+accumulation_steps: 4
+amp_enabled: true
+clip_grad_norm: 1.0
+log_interval: 10
+optimizer: AdamW
+weight_decay: 0.05
+optimizer_params:
+  betas: !!python/tuple
+  - 0.9
+  - 0.999
+  eps: 1.0e-08
+freeze_backbone_epochs: 5
+lr_head_frozen_phase: 0.001
+lr_backbone_unfrozen_phase: 5.0e-05
+lr_head_unfrozen_phase: 0.0005
+scheduler: WarmupCosine
+warmup_epochs: 5
+eta_min_lr: 1.0e-07
+loss_function: crossentropy
+loss_label_smoothing: 0.1
+loss_weights:
+  ce_weight: 0.5
+  focal_weight: 0.5
+focal_loss_alpha: 0.25
+focal_loss_gamma: 2.0
+augmentations_enabled: true
+augmentation_strategy: standard_finetune
+augmentation_severity: moderate
+evaluate_every_n_epochs: 1
+early_stopping_patience: 20
+metric_to_monitor_early_stopping: f1_macro
+min_delta_early_stopping: 0.0001
+use_enhanced_augmentations: false
+tta_enabled_val: false
+use_ema: false
+use_swa: false
+
+2025-06-02 18:01:06 - __main__ - INFO - [set_global_seed:125] - Global random seed set to: 42
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:321] - Device: cuda. GPU: Tesla T4
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:322] - cudnn.benchmark = True
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:324] - matmul_precision = 'high'
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:56] - [DATASET INIT - train] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (512, 512)
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-06-02 18:01:06 - phase4_finetuning.dataset - DEBUG - [__init__:69] - [DATASET INIT - train] Dataset name 'None' is None/empty, skipping.
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:107] - [DATASET INIT - train] Total valid image paths collected: 2137 from ~2137 items considered.
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:119] - [DATASET INIT - train] Dataset split size: 1709 samples.
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:56] - [DATASET INIT - val] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (512, 512)
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-06-02 18:01:06 - phase4_finetuning.dataset - DEBUG - [__init__:69] - [DATASET INIT - val] Dataset name 'None' is None/empty, skipping.
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:107] - [DATASET INIT - val] Total valid image paths collected: 2137 from ~2137 items considered.
+2025-06-02 18:01:06 - phase4_finetuning.dataset - INFO - [__init__:119] - [DATASET INIT - val] Dataset split size: 428 samples.
+2025-06-02 18:01:06 - __main__ - WARNING - [create_weighted_sampler:206] - Unknown sampler mode: inv_freq. Using uniform.
+2025-06-02 18:01:06 - __main__ - INFO - [create_weighted_sampler:209] - WeightedRandomSampler created with mode: inv_freq.
+2025-06-02 18:01:06 - __main__ - INFO - [main_execution_logic:341] - Dataloaders: Train batches=142, Val batches=18
+2025-06-02 18:01:06 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (512, 512), num_classes: 7
+2025-06-02 18:01:06 - phase2_model.models.hvt - WARNING - [__init__:34] - PatchEmbed: Img dims (512, 512) not perfectly divisible by patch_size 14.
+2025-06-02 18:01:09 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-02 18:01:12 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (512, 512) and 7 classes.
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:345] - Base HVT model created (num_classes=7).
+2025-06-02 18:01:12 - __main__ - INFO - [get_optimizer_param_groups:291] - Optimizer param groups created: 3 groups.
+2025-06-02 18:01:12 - __main__ - DEBUG - [get_optimizer_param_groups:292] -   Group 0 ('head_decay'): 1 params, Initial LR: 0.0005, WD: 0.05
+2025-06-02 18:01:12 - __main__ - DEBUG - [get_optimizer_param_groups:292] -   Group 1 ('backbone_decay'): 223 params, Initial LR: 5e-05, WD: 0.05
+2025-06-02 18:01:12 - __main__ - DEBUG - [get_optimizer_param_groups:292] -   Group 2 ('no_decay'): 228 params, Initial LR: 0.0005, WD: 0.0
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:353] - Optimizer: AdamW created. LRs will be set per epoch/stage/scheduler.
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:363] - Starting FT from scratch (no SSL, no FT resume).
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:367] - Model on cuda. Total: 273,667,975, Initial Trainable: 273,667,975
+2025-06-02 18:01:12 - __main__ - DEBUG - [get_cosine_schedule_with_warmup_step:98] - LambdaLR created with last_epoch=-1 for optimizer <class 'torch.optim.adamw.AdamW'>.
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:394] - Scheduler: WarmupCosine. WU Steps(run):175, Total Steps(run):2625, Resumed step:0
+2025-06-02 18:01:12 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:342] - Creating augmentation strategy: 'standard_finetune' for image size (512, 512)
+2025-06-02 18:01:12 - phase4_finetuning.utils.augmentations - WARNING - [create_cotton_leaf_augmentation:367] - Strategy 'standard_finetune' not explicitly handled by create_cotton_leaf_augmentation. Returning a minimal T_v2 transform (Resize, ToDtype, Normalize). Ensure this is intended or add handling for 'standard_finetune'.
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:403] - Using Compose (strategy: standard_finetune, severity: moderate).
+2025-06-02 18:01:12 - phase4_finetuning.dataset - INFO - [get_class_weights:192] - Computed class weights (inv_freq for loss) for split 'train': [1.191 0.684 1.179 1.115 1.387 0.533 2.806]
+2025-06-02 18:01:12 - __main__ - INFO - [get_class_weights_for_loss:216] - Using class weights from dataset: [1.1909407  0.68387353 1.1794341  1.1148076  1.3871753  0.533063
+ 2.8062398 ]
+2025-06-02 18:01:12 - __main__ - INFO - [main_execution_logic:410] - Using CrossentropyLoss.
+2025-06-02 18:01:12 - __main__ - CRITICAL - [<module>:509] - Unhandled CRITICAL exception in __main__ execution: phase4_finetuning.finetune.trainer.EnhancedFinetuner() got multiple values for keyword argument 'device'
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/main.py", line 500, in <module>
+    main_execution_logic()
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/main.py", line 412, in main_execution_logic
+    finetuner = EnhancedFinetuner(model=model,optimizer=optimizer,criterion=criterion,device=device,scaler=scaler,scheduler=scheduler,lr_scheduler_on_batch=lr_scheduler_on_batch, **cfg)
+TypeError: phase4_finetuning.finetune.trainer.EnhancedFinetuner() got multiple values for keyword argument 'device'
