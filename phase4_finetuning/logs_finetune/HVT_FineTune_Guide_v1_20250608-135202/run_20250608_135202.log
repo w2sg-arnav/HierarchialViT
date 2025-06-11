@@ -1,0 +1,131 @@
+2025-06-08 13:52:02 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/HVT_FineTune_Guide_v1_20250608-135202/run_20250608_135202.log. Logger 'root' Effective Level: INFO
+2025-06-08 13:52:02 - __main__ - INFO - [run:28] - Starting fine-tuning run: HVT_FineTune_Guide_v1_20250608-135202
+2025-06-08 13:52:02 - __main__ - INFO - [run:29] - Full configuration:
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+amp_enabled: true
+augmentations:
+  cutmix_prob: 0.5
+  enable: true
+  mixup_alpha: 0.4
+  severity: high
+  strategy: aggressive_medical
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: null
+  img_size:
+  - 512
+  - 512
+  num_classes: 7
+  num_workers: 6
+  original_dataset_name: Original Dataset
+  prefetch_factor: 3
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.85
+  use_weighted_sampler: true
+  weighted_sampler_mode: sqrt_inv_count
+device: cuda
+evaluation:
+  early_stopping:
+    metric: f1_macro
+    min_delta: 0.0001
+    patience: 25
+  ema_decay: 0.9999
+  evaluate_every_n_epochs: 1
+  swa_lr: 1.0e-05
+  swa_start_epoch_ratio: 0.8
+  tta_enabled: true
+  use_ema: true
+  use_swa: true
+model:
+  hvt_params:
+    attn_drop_rate: 0.0
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.1
+    embed_dim_rgb: 192
+    mlp_ratio: 4.0
+    model_drop_rate: 0.1
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 16
+    qkv_bias: true
+    spectral_channels: 0
+    use_gradient_checkpointing: true
+  resume_finetune_path: null
+  ssl_pretrained_path: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+run_name_prefix: HVT_FineTune_Guide_v1
+seed: 42
+torch_compile:
+  enable: true
+  mode: reduce-overhead
+training:
+  accumulation_steps: 4
+  batch_size: 12
+  clip_grad_norm: 1.0
+  epochs: 150
+  freeze_backbone_epochs: 5
+  loss:
+    focal_alpha: 0.25
+    focal_gamma: 2.0
+    label_smoothing: 0.15
+    type: Combined
+    use_class_weights: true
+    weights:
+      ce: 0.7
+      focal: 0.3
+  optimizer:
+    lr_backbone_unfrozen: 5.0e-05
+    lr_head_frozen: 0.001
+    lr_head_unfrozen: 0.0005
+    name: AdamW
+    weight_decay: 0.01
+  scheduler:
+    div_factor: 25.0
+    final_div_factor: 1.0e4
+    name: OneCycleLR
+    pct_start: 0.1
+
+2025-06-08 13:52:03 - __main__ - INFO - [run:40] - Setting up datasets and dataloaders...
+2025-06-08 13:52:03 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:342] - Creating augmentation strategy: 'aggressive_medical' for image size (512, 512)
+2025-06-08 13:52:03 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:351] - Strategy 'aggressive_medical' using CottonLeafDiseaseAugmentation with severity 'strong'
+2025-06-08 13:52:03 - phase4_finetuning.utils.augmentations - INFO - [__init__:101] - CottonLeafDiseaseAugmentation using severity 'strong' with params: {'rotation_degrees': 35, 'color_jitter_params': (0.4, 0.4, 0.3, 0.2), 'translate': (0.2, 0.2), 'scale': (0.6, 1.4), 'shear': 15, 'perspective_prob': 0.5, 'perspective_scale': 0.3, 'blur_prob': 0.3, 'blur_kernel': (3, 11), 'blur_sigma': (0.1, 2.0), 'erase_prob': 0.2, 'erase_scale': (0.02, 0.15), 'lighting_prob': 0.6, 'shadow_prob': 0.5, 'noise_prob': 0.4}
+2025-06-08 13:52:03 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:342] - Creating augmentation strategy: 'minimal' for image size (512, 512)
+2025-06-08 13:52:03 - phase4_finetuning.utils.augmentations - WARNING - [create_cotton_leaf_augmentation:367] - Strategy 'minimal' not explicitly handled by create_cotton_leaf_augmentation. Returning a minimal T_v2 transform (Resize, ToDtype, Normalize). Ensure this is intended or add handling for 'minimal'.
+2025-06-08 13:52:03 - phase4_finetuning.dataset - INFO - [__init__:56] - [DATASET INIT - train] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (512, 512)
+2025-06-08 13:52:03 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-06-08 13:52:03 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - train] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Augmented Dataset
+2025-06-08 13:52:04 - phase4_finetuning.dataset - INFO - [__init__:107] - [DATASET INIT - train] Total valid image paths collected: 9137 from ~9137 items considered.
+2025-06-08 13:52:04 - phase4_finetuning.dataset - INFO - [__init__:119] - [DATASET INIT - train] Dataset split size: 7766 samples.
+2025-06-08 13:52:04 - phase4_finetuning.dataset - INFO - [__init__:56] - [DATASET INIT - val] Root: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection, ImgSize: (512, 512)
+2025-06-08 13:52:04 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Original Dataset
+2025-06-08 13:52:04 - phase4_finetuning.dataset - INFO - [__init__:76] - [DATASET INIT - val] Scanning: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection/Augmented Dataset
+2025-06-08 13:52:05 - phase4_finetuning.dataset - INFO - [__init__:107] - [DATASET INIT - val] Total valid image paths collected: 9137 from ~9137 items considered.
+2025-06-08 13:52:05 - phase4_finetuning.dataset - INFO - [__init__:119] - [DATASET INIT - val] Dataset split size: 1371 samples.
+2025-06-08 13:52:05 - __main__ - INFO - [run:76] - Discovered 7 classes.
+2025-06-08 13:52:05 - __main__ - INFO - [run:97] - Creating HVT model for fine-tuning...
+2025-06-08 13:52:05 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (512, 512), num_classes: 7
+2025-06-08 13:52:08 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-08 13:52:11 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (512, 512) and 7 classes.
+2025-06-08 13:52:11 - __main__ - INFO - [run:105] - Initializing EnhancedFinetuner...
+2025-06-08 13:52:11 - phase4_finetuning.finetune.trainer - INFO - [_load_ssl_weights:289] - Loading SSL backbone weights from: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+2025-06-08 13:52:11 - phase4_finetuning.finetune.trainer - ERROR - [_load_ssl_weights:298] - Failed to load SSL weights from /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth: [Errno 2] No such file or directory: '/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth'
+Traceback (most recent call last):
+  File "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/finetune/trainer.py", line 291, in _load_ssl_weights
+    ckpt = torch.load(path, map_location=self.device)
+  File "/home/zeus/miniconda3/envs/cloudspace/lib/python3.10/site-packages/torch/serialization.py", line 998, in load
+    with _open_file_like(f, 'rb') as opened_file:
+  File "/home/zeus/miniconda3/envs/cloudspace/lib/python3.10/site-packages/torch/serialization.py", line 445, in _open_file_like
+    return _open_file(name_or_buffer, mode)
+  File "/home/zeus/miniconda3/envs/cloudspace/lib/python3.10/site-packages/torch/serialization.py", line 426, in __init__
+    super().__init__(open(name, mode))
+FileNotFoundError: [Errno 2] No such file or directory: '/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth'
+2025-06-08 13:52:12 - phase4_finetuning.finetune.trainer - INFO - [_setup_model:200] - Model compiled with mode 'reduce-overhead'.
+2025-06-08 13:52:12 - phase4_finetuning.dataset - INFO - [get_class_weights:192] - Computed class weights (inv_freq for loss) for split 'train': [1.034 0.905 1.061 1.02  1.065 0.829 1.164]

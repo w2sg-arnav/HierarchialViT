@@ -1,0 +1,103 @@
+# configs/finetune_hvt_guide.yaml
+#
+# Configuration for the advanced fine-tuning of the SSL-pretrained HVT model.
+# This file centralizes all parameters for clarity and reproducibility.
+
+# --- Run & Hardware ---
+run_name_prefix: "HVT_FineTune_Guide_v1"
+seed: 42
+device: "cuda"
+amp_enabled: true
+torch_compile:
+  enable: true
+  mode: "reduce-overhead"
+cudnn_benchmark: true
+
+# --- Dataset & Dataloader ---
+data:
+  root_dir: "/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection"
+  original_dataset_name: "Original Dataset"
+  augmented_dataset_name: null # Set to "Augmented Dataset" to include it
+  img_size: [512, 512]
+  num_classes: 7
+  train_split_ratio: 0.85
+  num_workers: 6
+  prefetch_factor: 3
+  use_weighted_sampler: true
+  weighted_sampler_mode: "sqrt_inv_count" # 'inv_count', 'effective_number', or 'sqrt_inv_count'
+
+# --- Model ---
+model:
+  # This HVT architecture MUST match the pre-trained SSL model's backbone
+  hvt_params:
+    patch_size: 16 # Adjusted for 512px fine-tuning
+    embed_dim_rgb: 192
+    spectral_channels: 0 # RGB-only fine-tuning
+    depths: [3, 6, 24, 3]
+    num_heads: [6, 12, 24, 48]
+    mlp_ratio: 4.0
+    qkv_bias: true
+    model_drop_rate: 0.1
+    attn_drop_rate: 0.0
+    drop_path_rate: 0.1
+    use_gradient_checkpointing: true # Essential for large models on T4
+  # Path to the best checkpoint from our SSL pre-training run
+  ssl_pretrained_path: "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth"
+  # Set to a path to resume a PREVIOUS FINE-TUNING run, e.g., "path/to/best_finetuned_hvt.pth"
+  resume_finetune_path: null
+
+# --- Training Strategy ---
+training:
+  epochs: 150
+  batch_size: 12
+  accumulation_steps: 4 # Effective Batch Size = 12 * 4 = 48
+  clip_grad_norm: 1.0
+  # Backbone freezing phase
+  freeze_backbone_epochs: 5
+  # Layer-wise Learning Rate Decay (LLRD)
+  optimizer:
+    name: "AdamW"
+    weight_decay: 0.01
+    lr_head_frozen: 1.0e-3
+    lr_backbone_unfrozen: 5.0e-5
+    lr_head_unfrozen: 5.0e-4
+  # Scheduler (OneCycleLR is recommended for super-convergence)
+  scheduler:
+    name: "OneCycleLR"
+    pct_start: 0.1
+    div_factor: 25.0
+    final_div_factor: 1.0e4
+  # Loss Function
+  loss:
+    type: "Combined" # 'CrossEntropy', 'Focal', or 'Combined'
+    label_smoothing: 0.15
+    focal_alpha: 0.25
+    focal_gamma: 2.0
+    weights:
+      ce: 0.7
+      focal: 0.3
+    use_class_weights: true # Calculate and use weights for imbalanced classes
+
+# --- Augmentations ---
+augmentations:
+  enable: true
+  strategy: "aggressive_medical" # Maps to CottonLeafDiseaseAugmentation
+  severity: "high"
+  # Mixup & CutMix are applied by the trainer
+  mixup_alpha: 0.4
+  cutmix_prob: 0.5
+
+# --- Evaluation & Advanced Techniques ---
+evaluation:
+  evaluate_every_n_epochs: 1
+  tta_enabled: true # Enable Test-Time Augmentation for validation
+  early_stopping:
+    patience: 25
+    metric: "f1_macro" # 'f1_macro', 'accuracy', or 'val_loss'
+    min_delta: 0.0001
+  # Stochastic Weight Averaging (SWA) and Exponential Moving Average (EMA)
+  use_swa: true
+  swa_start_epoch_ratio: 0.8 # Start SWA for the last 20% of epochs
+  swa_lr: 1.0e-5
+  use_ema: true
+  ema_decay: 0.9999

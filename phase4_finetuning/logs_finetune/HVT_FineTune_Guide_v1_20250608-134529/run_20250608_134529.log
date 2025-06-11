@@ -1,0 +1,101 @@
+2025-06-08 13:45:29 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/HVT_FineTune_Guide_v1_20250608-134529/run_20250608_134529.log. Logger 'root' Effective Level: INFO
+2025-06-08 13:45:29 - __main__ - INFO - [run:31] - Starting fine-tuning run: HVT_FineTune_Guide_v1_20250608-134529
+2025-06-08 13:45:29 - __main__ - INFO - [run:32] - Full configuration:
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+amp_enabled: true
+augmentations:
+  cutmix_prob: 0.5
+  enable: true
+  mixup_alpha: 0.4
+  severity: high
+  strategy: aggressive_medical
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: null
+  img_size:
+  - 512
+  - 512
+  num_classes: 7
+  num_workers: 6
+  original_dataset_name: Original Dataset
+  prefetch_factor: 3
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.85
+  use_weighted_sampler: true
+  weighted_sampler_mode: sqrt_inv_count
+device: cuda
+evaluation:
+  early_stopping:
+    metric: f1_macro
+    min_delta: 0.0001
+    patience: 25
+  ema_decay: 0.9999
+  evaluate_every_n_epochs: 1
+  swa_lr: 1.0e-05
+  swa_start_epoch_ratio: 0.8
+  tta_enabled: true
+  use_ema: true
+  use_swa: true
+model:
+  hvt_params:
+    attn_drop_rate: 0.0
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.1
+    embed_dim_rgb: 192
+    mlp_ratio: 4.0
+    model_drop_rate: 0.1
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 16
+    qkv_bias: true
+    spectral_channels: 0
+    use_gradient_checkpointing: true
+  resume_finetune_path: null
+  ssl_pretrained_path: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth
+run_name_prefix: HVT_FineTune_Guide_v1
+seed: 42
+torch_compile:
+  enable: true
+  mode: reduce-overhead
+training:
+  accumulation_steps: 4
+  batch_size: 12
+  clip_grad_norm: 1.0
+  epochs: 150
+  freeze_backbone_epochs: 5
+  loss:
+    focal_alpha: 0.25
+    focal_gamma: 2.0
+    label_smoothing: 0.15
+    type: Combined
+    use_class_weights: true
+    weights:
+      ce: 0.7
+      focal: 0.3
+  optimizer:
+    lr_backbone_unfrozen: 5.0e-05
+    lr_head_frozen: 0.001
+    lr_head_unfrozen: 0.0005
+    name: AdamW
+    weight_decay: 0.01
+  scheduler:
+    div_factor: 25.0
+    final_div_factor: 1.0e4
+    name: OneCycleLR
+    pct_start: 0.1
+
+2025-06-08 13:45:30 - __main__ - INFO - [run:43] - Setting up datasets and dataloaders...
+2025-06-08 13:45:30 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:342] - Creating augmentation strategy: 'aggressive_medical' for image size (512, 512)
+2025-06-08 13:45:30 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:351] - Strategy 'aggressive_medical' using CottonLeafDiseaseAugmentation with severity 'strong'
+2025-06-08 13:45:30 - phase4_finetuning.utils.augmentations - INFO - [__init__:101] - CottonLeafDiseaseAugmentation using severity 'strong' with params: {'rotation_degrees': 35, 'color_jitter_params': (0.4, 0.4, 0.3, 0.2), 'translate': (0.2, 0.2), 'scale': (0.6, 1.4), 'shear': 15, 'perspective_prob': 0.5, 'perspective_scale': 0.3, 'blur_prob': 0.3, 'blur_kernel': (3, 11), 'blur_sigma': (0.1, 2.0), 'erase_prob': 0.2, 'erase_scale': (0.02, 0.15), 'lighting_prob': 0.6, 'shadow_prob': 0.5, 'noise_prob': 0.4}
+2025-06-08 13:45:30 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:342] - Creating augmentation strategy: 'minimal' for image size (512, 512)
+2025-06-08 13:45:30 - phase4_finetuning.utils.augmentations - WARNING - [create_cotton_leaf_augmentation:367] - Strategy 'minimal' not explicitly handled by create_cotton_leaf_augmentation. Returning a minimal T_v2 transform (Resize, ToDtype, Normalize). Ensure this is intended or add handling for 'minimal'.
