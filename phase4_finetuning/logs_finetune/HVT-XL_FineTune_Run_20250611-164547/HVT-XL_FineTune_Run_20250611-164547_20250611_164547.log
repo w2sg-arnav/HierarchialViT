@@ -138,3 +138,7 @@ training:
 2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 6/50 ---
 2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:261] - Epoch 6: Backbone UNFROZEN.
 2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:267] - Trainable params updated: 273,615,751
+2025-06-11 17:01:44 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 6: Loss=1.1446, Accuracy=0.2210, F1-Macro=0.1390
+2025-06-11 17:01:44 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 7/50 ---
+2025-06-11 17:05:56 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 7: Loss=1.1415, Accuracy=0.2232, F1-Macro=0.1341
+2025-06-11 17:05:56 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 8/50 ---
