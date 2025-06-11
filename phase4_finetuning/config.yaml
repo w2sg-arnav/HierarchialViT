@@ -1,103 +1,109 @@
-# configs/finetune_hvt_guide.yaml
-#
-# Configuration for the advanced fine-tuning of the SSL-pretrained HVT model.
-# This file centralizes all parameters for clarity and reproducibility.
+# ===================================================================
+# == Main Configuration for Phase 4: Fine-tuning
+# ===================================================================
 
-# --- Run & Hardware ---
-run_name_prefix: "HVT_FineTune_Guide_v1"
+# --- Run Setup ---
+run_name_prefix: "HVT-XL_FineTune_Run"
 seed: 42
 device: "cuda"
-amp_enabled: true
-torch_compile:
-  enable: true
-  mode: "reduce-overhead"
 cudnn_benchmark: true
+PACKAGE_ROOT_PATH: "./phase4_finetuning" # Will be updated by main.py
+PROJECT_ROOT_PATH: ".." # Will be updated by main.py
 
-# --- Dataset & Dataloader ---
-data:
-  root_dir: "/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection"
-  original_dataset_name: "Original Dataset"
-  augmented_dataset_name: null # Set to "Augmented Dataset" to include it
-  img_size: [512, 512]
-  num_classes: 7
-  train_split_ratio: 0.85
-  num_workers: 6
-  prefetch_factor: 3
-  use_weighted_sampler: true
-  weighted_sampler_mode: "sqrt_inv_count" # 'inv_count', 'effective_number', or 'sqrt_inv_count'
-
-# --- Model ---
+# --- Model Configuration ---
 model:
-  # This HVT architecture MUST match the pre-trained SSL model's backbone
+  # Path to the SSL pre-trained backbone from Phase 3
+  ssl_pretrained_path: "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth"
+  # Path to resume a fine-tuning run (leave blank for new run)
+  resume_finetune_path: ""
+  # HVT Backbone Parameters (MUST MATCH the architecture from the SSL checkpoint)
   hvt_params:
-    patch_size: 16 # Adjusted for 512px fine-tuning
+    patch_size: 14
     embed_dim_rgb: 192
-    spectral_channels: 0 # RGB-only fine-tuning
+    embed_dim_spectral: 0 # No spectral data for this fine-tuning
+    spectral_channels: 0
     depths: [3, 6, 24, 3]
     num_heads: [6, 12, 24, 48]
     mlp_ratio: 4.0
     qkv_bias: true
-    model_drop_rate: 0.1
+    model_drop_rate: 0.0
     attn_drop_rate: 0.0
-    drop_path_rate: 0.1
-    use_gradient_checkpointing: true # Essential for large models on T4
-  # Path to the best checkpoint from our SSL pre-training run
-  ssl_pretrained_path: "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth"
-  # Set to a path to resume a PREVIOUS FINE-TUNING run, e.g., "path/to/best_finetuned_hvt.pth"
-  resume_finetune_path: null
+    drop_path_rate: 0.2
+    norm_layer_name: "LayerNorm"
+    use_dfca: false
+    use_gradient_checkpointing: true # Essential for large models
+    # These SSL/aux flags are not used in fine-tuning but define the arch
+    ssl_enable_mae: false
+    ssl_enable_contrastive: false
+    enable_consistency_loss_heads: false
 
-# --- Training Strategy ---
+# --- Data Configuration ---
+data:
+  root_dir: "/teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset for Cotton Leaf Disease Detection"
+  original_dataset_name: "Original Dataset"
+  augmented_dataset_name: "Augmented Dataset"
+  img_size: [448, 448]
+  num_classes: 7 # Will be updated automatically if needed
+  train_split_ratio: 0.95
+  num_workers: 4
+  prefetch_factor: 2
+  use_weighted_sampler: true
+
+# --- Augmentation Configuration ---
+augmentations:
+  enable: true
+  strategy: "cotton_disease" # 'cotton_disease' or 'aggressive_medical'
+  severity: "moderate"      # 'mild', 'moderate', or 'strong'
+  # Mixup/CutMix are now controlled in the training section for clarity
+  mixup_alpha: 0.2
+  cutmix_prob: 0.5 # Probability of applying CutMix if mixup isn't chosen
+
+# --- Training Configuration ---
 training:
-  epochs: 150
-  batch_size: 12
-  accumulation_steps: 4 # Effective Batch Size = 12 * 4 = 48
+  epochs: 50
+  batch_size: 16
+  accumulation_steps: 2 # Effective batch size = 32
+  amp_enabled: true
   clip_grad_norm: 1.0
-  # Backbone freezing phase
-  freeze_backbone_epochs: 5
-  # Layer-wise Learning Rate Decay (LLRD)
+  freeze_backbone_epochs: 5 # Number of epochs to train only the head
+
+  # Optimizer settings
   optimizer:
-    name: "AdamW"
-    weight_decay: 0.01
-    lr_head_frozen: 1.0e-3
-    lr_backbone_unfrozen: 5.0e-5
-    lr_head_unfrozen: 5.0e-4
-  # Scheduler (OneCycleLR is recommended for super-convergence)
+    lr_head_unfrozen: 0.001
+    lr_backbone_unfrozen: 0.00005
+
+  # Scheduler settings (OneCycleLR)
   scheduler:
-    name: "OneCycleLR"
+    name: "onecyclelr"
     pct_start: 0.1
     div_factor: 25.0
-    final_div_factor: 1.0e4
-  # Loss Function
+    final_div_factor: 10000.0
+
+  # Loss function settings
   loss:
-    type: "Combined" # 'CrossEntropy', 'Focal', or 'Combined'
-    label_smoothing: 0.15
+    type: "combined" # 'combined' or 'crossentropy'
+    use_class_weights: true
+    label_smoothing: 0.1
     focal_alpha: 0.25
     focal_gamma: 2.0
     weights:
-      ce: 0.7
-      focal: 0.3
-    use_class_weights: true # Calculate and use weights for imbalanced classes
+      ce: 0.5
+      focal: 0.5
 
-# --- Augmentations ---
-augmentations:
-  enable: true
-  strategy: "aggressive_medical" # Maps to CottonLeafDiseaseAugmentation
-  severity: "high"
-  # Mixup & CutMix are applied by the trainer
-  mixup_alpha: 0.4
-  cutmix_prob: 0.5
-
-# --- Evaluation & Advanced Techniques ---
+# --- Evaluation and Advanced Techniques ---
 evaluation:
-  evaluate_every_n_epochs: 1
-  tta_enabled: true # Enable Test-Time Augmentation for validation
-  early_stopping:
-    patience: 25
-    metric: "f1_macro" # 'f1_macro', 'accuracy', or 'val_loss'
-    min_delta: 0.0001
-  # Stochastic Weight Averaging (SWA) and Exponential Moving Average (EMA)
-  use_swa: true
-  swa_start_epoch_ratio: 0.8 # Start SWA for the last 20% of epochs
-  swa_lr: 1.0e-5
   use_ema: true
   ema_decay: 0.9999
+  use_swa: false # Stochastic Weight Averaging
+  swa_start_epoch_ratio: 0.75
+  swa_lr: 0.00002
+  tta_enabled: true # Test-Time Augmentation
+  early_stopping:
+    metric: "val_f1_macro" # 'val_f1_macro', 'val_accuracy', or 'val_loss'
+    patience: 15
+    min_delta: 0.0001
+
+# --- Torch Compile (Optional Performance Boost) ---
+torch_compile:
+  enable: false
+  mode: "reduce-overhead"
