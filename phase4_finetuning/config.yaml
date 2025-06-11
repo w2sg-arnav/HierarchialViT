@@ -13,7 +13,7 @@ PROJECT_ROOT_PATH: ".." # Will be updated by main.py
 # --- Model Configuration ---
 model:
   # Path to the SSL pre-trained backbone from Phase 3
-  ssl_pretrained_path: "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth"
+  ssl_pretrained_path: "/teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth"
   # Path to resume a fine-tuning run (leave blank for new run)
   resume_finetune_path: ""
   # HVT Backbone Parameters (MUST MATCH the architecture from the SSL checkpoint)

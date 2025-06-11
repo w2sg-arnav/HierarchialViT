@@ -95,39 +95,3 @@ class SARCLD2024Dataset(Dataset):
             self.class_weights_computed = weights
             logger.info(f"Computed class weights for split '{self.split}': {self.class_weights_computed.numpy().round(3)}")
         return self.class_weights_computed
-
-#### **File: `phase4_finetuning/utils/ema.py`**
-```python
-# phase4_finetuning/utils/ema.py
-import torch
-import torch.nn as nn
-import logging
-
-class EMA:
-    """ Exponential Moving Average of model weights. """
-    def __init__(self, model: nn.Module, decay: float = 0.9999):
-        self.model = model
-        self.decay = decay
-        self.shadow_model = self._create_shadow_model()
-        self.logger = logging.getLogger(__name__)
-        self.logger.info(f"EMA initialized with decay={decay}.")
-
-    def _create_shadow_model(self):
-        shadow = type(self.model)(**self.model.hvt_params, img_size=self.model.current_img_size, num_classes=self.model.num_classes)
-        shadow.load_state_dict(self.model.state_dict())
-        shadow.to(self.model.parameters().__next__().device)
-        return shadow
-
-    def update(self):
-        with torch.no_grad():
-            for shadow_p, model_p in zip(self.shadow_model.parameters(), self.model.parameters()):
-                shadow_p.data.mul_(self.decay).add_(model_p.data, alpha=1 - self.decay)
-
-    # Note: apply_shadow and restore are no longer needed, we just pass self.shadow_model to validate
-    
-    def state_dict(self):
-        return self.shadow_model.state_dict()
-
-    def load_state_dict(self, state_dict):
-        self.shadow_model.load_state_dict(state_dict)
-        self.logger.info("EMA state (shadow model weights) loaded from checkpoint.")

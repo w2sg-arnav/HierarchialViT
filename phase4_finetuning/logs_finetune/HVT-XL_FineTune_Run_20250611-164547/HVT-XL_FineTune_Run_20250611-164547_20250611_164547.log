@@ -1,0 +1,140 @@
+2025-06-11 16:45:47 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/HVT-XL_FineTune_Run_20250611-164547/HVT-XL_FineTune_Run_20250611-164547_20250611_164547.log. Logger 'root' Effective Level: INFO
+2025-06-11 16:45:47 - __main__ - INFO - [run:37] - Starting fine-tuning run: HVT-XL_FineTune_Run_20250611-164547
+2025-06-11 16:45:47 - __main__ - INFO - [run:38] - Full configuration:
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+augmentations:
+  cutmix_prob: 0.5
+  enable: true
+  mixup_alpha: 0.2
+  severity: moderate
+  strategy: cotton_disease
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: Augmented Dataset
+  img_size:
+  - 448
+  - 448
+  num_classes: 7
+  num_workers: 4
+  original_dataset_name: Original Dataset
+  prefetch_factor: 2
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.95
+  use_weighted_sampler: true
+device: cuda
+evaluation:
+  early_stopping:
+    metric: val_f1_macro
+    min_delta: 0.0001
+    patience: 15
+  ema_decay: 0.9999
+  swa_lr: 2.0e-05
+  swa_start_epoch_ratio: 0.75
+  tta_enabled: true
+  use_ema: true
+  use_swa: false
+model:
+  hvt_params:
+    attn_drop_rate: 0.0
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.2
+    embed_dim_rgb: 192
+    embed_dim_spectral: 0
+    enable_consistency_loss_heads: false
+    mlp_ratio: 4.0
+    model_drop_rate: 0.0
+    norm_layer_name: LayerNorm
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 14
+    qkv_bias: true
+    spectral_channels: 0
+    ssl_enable_contrastive: false
+    ssl_enable_mae: false
+    use_dfca: false
+    use_gradient_checkpointing: true
+  resume_finetune_path: ''
+  ssl_pretrained_path: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+run_name_prefix: HVT-XL_FineTune_Run
+seed: 42
+torch_compile:
+  enable: false
+  mode: reduce-overhead
+training:
+  accumulation_steps: 2
+  amp_enabled: true
+  batch_size: 16
+  clip_grad_norm: 1.0
+  epochs: 50
+  freeze_backbone_epochs: 5
+  loss:
+    focal_alpha: 0.25
+    focal_gamma: 2.0
+    label_smoothing: 0.1
+    type: combined
+    use_class_weights: true
+    weights:
+      ce: 0.5
+      focal: 0.5
+  optimizer:
+    lr_backbone_unfrozen: 5.0e-05
+    lr_head_unfrozen: 0.001
+  scheduler:
+    div_factor: 25.0
+    final_div_factor: 10000.0
+    name: onecyclelr
+    pct_start: 0.1
+
+2025-06-11 16:45:48 - __main__ - INFO - [run:49] - Setting up datasets and dataloaders...
+2025-06-11 16:45:48 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:168] - Creating augmentation strategy: 'cotton_disease' for image size (448, 448)
+2025-06-11 16:45:48 - phase4_finetuning.utils.augmentations - INFO - [__init__:145] - CottonLeafDiseaseAugmentation initialized with severity 'moderate'.
+2025-06-11 16:45:48 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:168] - Creating augmentation strategy: 'minimal' for image size (448, 448)
+2025-06-11 16:45:48 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'train'...
+2025-06-11 16:45:49 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-11 16:45:49 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'train' size: 8680 samples.
+2025-06-11 16:45:49 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'val'...
+2025-06-11 16:45:50 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-11 16:45:50 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'val' size: 457 samples.
+2025-06-11 16:45:50 - __main__ - INFO - [run:86] - Discovered 7 classes.
+2025-06-11 16:45:50 - __main__ - INFO - [run:96] - Using WeightedRandomSampler for training.
+2025-06-11 16:45:50 - __main__ - INFO - [run:103] - Creating HVT model for fine-tuning...
+2025-06-11 16:45:50 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (448, 448), num_classes: 7
+2025-06-11 16:45:52 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-11 16:45:55 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-11 16:45:55 - __main__ - INFO - [run:111] - Initializing EnhancedFinetuner...
+2025-06-11 16:45:55 - phase4_finetuning.finetune.trainer - INFO - [_load_ssl_weights:298] - Attempting to load SSL backbone weights from: /teamspace/studios/this_studio/cvpr25/phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-06-11 16:45:59 - phase4_finetuning.finetune.trainer - INFO - [_load_ssl_weights:307] - SSL weights loaded. Missing keys in model: []. Unexpected keys in checkpoint: []
+2025-06-11 16:45:59 - phase4_finetuning.dataset - INFO - [get_class_weights:96] - Computed class weights for split 'train': [1.045 0.906 1.039 1.032 1.063 0.831 1.159]
+2025-06-11 16:45:59 - phase4_finetuning.utils.losses - INFO - [__init__:21] - FocalLoss initialized with alpha=0.25, gamma=2.0.
+2025-06-11 16:45:59 - phase4_finetuning.utils.losses - INFO - [__init__:54] - CombinedLoss initialized with CE weight=0.5, Focal weight=0.5, Smoothing=0.1.
+2025-06-11 16:45:59 - phase4_finetuning.utils.ema - INFO - [_create_shadow_copy:55] - Creating EMA shadow model by re-instantiating HVT class.
+2025-06-11 16:46:01 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-11 16:46:04 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-11 16:46:04 - phase4_finetuning.utils.ema - INFO - [__init__:44] - EMA helper initialized with decay=0.9999. Shadow model created.
+2025-06-11 16:46:04 - phase4_finetuning.finetune.trainer - INFO - [__init__:52] - Trainer initialized. Model has 273,615,751 trainable parameters.
+2025-06-11 16:46:04 - __main__ - INFO - [run:122] - Starting the training and validation loop...
+2025-06-11 16:46:04 - phase4_finetuning.finetune.trainer - INFO - [run:56] - Starting fine-tuning run. Monitoring 'val_f1_macro' for best model.
+2025-06-11 16:46:04 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 1/50 ---
+2025-06-11 16:46:04 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:263] - Epoch 1: Backbone FROZEN.
+2025-06-11 16:46:04 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:267] - Trainable params updated: 13,831
+2025-06-11 16:48:27 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 1: Loss=1.1562, Accuracy=0.1291, F1-Macro=0.0656
+2025-06-11 16:48:27 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 2/50 ---
+2025-06-11 16:50:42 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 2: Loss=1.1545, Accuracy=0.1335, F1-Macro=0.0692
+2025-06-11 16:50:42 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 3/50 ---
+2025-06-11 16:52:57 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 3: Loss=1.1523, Accuracy=0.1444, F1-Macro=0.0752
+2025-06-11 16:52:57 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 4/50 ---
+2025-06-11 16:55:14 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 4: Loss=1.1498, Accuracy=0.1707, F1-Macro=0.1000
+2025-06-11 16:55:14 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 5/50 ---
+2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:172] - Validation Epoch 5: Loss=1.1474, Accuracy=0.2013, F1-Macro=0.1258
+2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [run:61] - --- Starting Epoch 6/50 ---
+2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:261] - Epoch 6: Backbone UNFROZEN.
+2025-06-11 16:57:28 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:267] - Trainable params updated: 273,615,751
