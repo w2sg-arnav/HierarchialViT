@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.cuda.amp import autocast, GradScaler
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import OneCycleLR, ConstantLR
 from torch.utils.data import DataLoader
 import numpy as np
 import logging
@@ -17,7 +17,7 @@ import torchvision.transforms.v2 as T_v2
 # Use relative imports
 from ..utils.metrics import compute_metrics
 from ..utils.ema import EMA
-from ..utils.losses import CombinedLoss
+from ..utils.losses import CombinedLoss, FocalLoss
 
 class EnhancedFinetuner:
     """ An advanced, configuration-driven trainer for fine-tuning models. """
@@ -33,7 +33,6 @@ class EnhancedFinetuner:
         self.logger = logging.getLogger(__name__)
 
         self.start_epoch = 1
-        # CORRECTED: Accessing nested config keys
         self.best_metric = -1.0 if self.cfg['evaluation']['early_stopping']['metric'] != 'val_loss' else float('inf')
         self.history = defaultdict(list)
 
@@ -41,9 +40,7 @@ class EnhancedFinetuner:
         self.optimizer = self._create_optimizer()
         self.scheduler = self._create_scheduler()
         self.criterion = self._create_criterion()
-        # CORRECTED: Accessing nested config key
         self.scaler = GradScaler(enabled=self.cfg['training']['amp_enabled'])
-        # CORRECTED: Accessing nested config key
         self.ema = EMA(self.model, decay=self.cfg['evaluation']['ema_decay']) if self.cfg['evaluation']['use_ema'] else None
 
         if self.cfg['model'].get('resume_finetune_path'):
@@ -56,40 +53,53 @@ class EnhancedFinetuner:
         self.logger.info(f"Starting fine-tuning run. Monitoring '{self.cfg['evaluation']['early_stopping']['metric']}' for best model.")
         patience_counter = 0
         total_epochs = self.cfg['training']['epochs']
+        save_every = self.cfg['training'].get('save_every_n_epochs', 10)
 
-        for epoch in range(self.start_epoch, total_epochs + 1):
-            self.logger.info(f"--- Starting Epoch {epoch}/{total_epochs} ---")
-            self._set_parameter_groups_for_epoch(epoch)
-            train_loss = self._train_one_epoch(epoch)
-            val_loss, metrics = self._validate_one_epoch(epoch)
-            self._update_history(train_loss, val_loss, metrics)
+        last_epoch_ran = self.start_epoch - 1
+        try:
+            for epoch in range(self.start_epoch, total_epochs + 1):
+                last_epoch_ran = epoch
+                self.logger.info(f"--- Starting Epoch {epoch}/{total_epochs} ---")
+                self._set_parameter_groups_for_epoch(epoch)
+                train_loss = self._train_one_epoch(epoch)
+                val_loss, metrics = self._validate_one_epoch(epoch)
+                self._update_history(train_loss, val_loss, metrics)
 
-            current_metric_val = metrics.get(self.cfg['evaluation']['early_stopping']['metric'])
-            if current_metric_val is not None:
-                is_better = self._is_metric_better(current_metric_val)
-                if is_better:
-                    self.logger.info(f"Epoch {epoch}: New best metric! {self.cfg['evaluation']['early_stopping']['metric']} = {current_metric_val:.4f}")
-                    self.best_metric = current_metric_val
-                    patience_counter = 0
-                    self._save_checkpoint(epoch, is_best=True)
-                else:
-                    patience_counter += 1
-            
-            patience_limit = self.cfg['evaluation']['early_stopping']['patience']
-            if patience_counter >= patience_limit:
-                self.logger.info(f"Early stopping triggered at epoch {epoch}. Patience: {patience_counter}/{patience_limit}.")
-                break
+                metric_to_monitor = self.cfg['evaluation']['early_stopping']['metric']
+                current_metric_val = metrics.get(metric_to_monitor)
+
+                if current_metric_val is not None:
+                    if self._is_metric_better(current_metric_val):
+                        self.logger.info(f"Epoch {epoch}: New best metric! {metric_to_monitor} = {current_metric_val:.4f} (previously {self.best_metric:.4f})")
+                        self.best_metric = current_metric_val
+                        patience_counter = 0
+                        self._save_checkpoint(epoch, is_best=True)
+                    else:
+                        patience_counter += 1
+                        self.logger.info(f"No improvement in {metric_to_monitor}. Best: {self.best_metric:.4f}. Patience: {patience_counter}/{self.cfg['evaluation']['early_stopping']['patience']}")
+
+                if epoch > 0 and epoch % save_every == 0:
+                    self._save_checkpoint(epoch, is_best=False)
+
+                if patience_counter >= self.cfg['evaluation']['early_stopping']['patience']:
+                    self.logger.info(f"Early stopping triggered at epoch {epoch}. No improvement for {patience_counter} epochs.")
+                    break
         
-        self.logger.info("Training finished.")
+        except KeyboardInterrupt:
+            self.logger.warning("Training interrupted by user.")
+        
+        except Exception as e:
+            self.logger.critical(f"A fatal error occurred during training at epoch {last_epoch_ran}: {e}", exc_info=True)
+        
+        finally:
+            self.logger.info("Training finished. Saving final model state.")
+            self._save_checkpoint(last_epoch_ran, is_best=False, final_save=True)
 
     def _train_one_epoch(self, epoch: int) -> float:
         self.model.train()
         total_loss = 0.0
-        # CORRECTED: Accessing nested config key
-        total_epochs = self.cfg['training']['epochs']
-        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}/{total_epochs} [Train]")
+        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}/{self.cfg['training']['epochs']} [Train]")
         
-        # CORRECTED: Accessing nested config keys
         mixup_alpha = self.cfg['augmentations'].get('mixup_alpha', 0.0)
         cutmix_prob = self.cfg['augmentations'].get('cutmix_prob', 0.0)
         accumulation_steps = self.cfg['training']['accumulation_steps']
@@ -123,11 +133,9 @@ class EnhancedFinetuner:
                 if clip_grad_val:
                     self.scaler.unscale_(self.optimizer)
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), clip_grad_val)
-                
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
                 self.optimizer.zero_grad(set_to_none=True)
-                
                 if self.scheduler: self.scheduler.step()
                 if self.ema: self.ema.update()
 
@@ -148,8 +156,6 @@ class EnhancedFinetuner:
         with torch.no_grad():
             for images, labels in pbar:
                 images, labels = images.to(self.device), labels.to(self.device)
-
-                # CORRECTED: Accessing nested config keys
                 with autocast(enabled=self.cfg['training']['amp_enabled']):
                     if self.cfg['evaluation']['tta_enabled']:
                         outputs = self._tta_inference(model_to_eval, images)
@@ -172,7 +178,6 @@ class EnhancedFinetuner:
         self.logger.info(f"Validation Epoch {epoch}: Loss={avg_loss:.4f}, Accuracy={metrics.get('accuracy',0):.4f}, F1-Macro={metrics.get('f1_macro',0):.4f}")
         return avg_loss, metrics
 
-    # --- HELPER METHODS ---
     def _tta_inference(self, model: nn.Module, images: torch.Tensor) -> torch.Tensor:
         original_logits = model(rgb_img=images, mode='classify')
         original_logits = original_logits[0] if isinstance(original_logits, tuple) else original_logits
@@ -210,7 +215,6 @@ class EnhancedFinetuner:
         
     def _setup_model(self, model):
         if self.cfg['model'].get('ssl_pretrained_path'): self._load_ssl_weights(model)
-        # CORRECTED: Accessing nested config keys
         if self.cfg['torch_compile']['enable'] and hasattr(torch, 'compile'):
             try:
                 model = torch.compile(model, mode=self.cfg['torch_compile']['mode'])
@@ -220,15 +224,12 @@ class EnhancedFinetuner:
         return model.to(self.device)
 
     def _create_optimizer(self) -> AdamW:
-        param_groups = self._get_param_groups()
-        # Initial LR is set in param_groups; this is just the optimizer type.
-        return AdamW(param_groups)
+        return AdamW(self._get_param_groups())
 
     def _get_param_groups(self) -> list:
         head_name = 'classifier_head'
         head_params = [p for n, p in self.model.named_parameters() if head_name in n and p.requires_grad]
         backbone_params = [p for n, p in self.model.named_parameters() if head_name not in n and p.requires_grad]
-        # CORRECTED: Accessing nested config key
         opt_cfg = self.cfg['training']['optimizer']
         return [
             {'params': backbone_params, 'lr': opt_cfg['lr_backbone_unfrozen'], 'name': 'backbone'},
@@ -236,61 +237,46 @@ class EnhancedFinetuner:
         ]
 
     def _create_scheduler(self):
-        # CORRECTED: Accessing nested config key
         cfg = self.cfg['training']['scheduler']
-        if cfg['name'].lower() == 'onecyclelr':
+        scheduler_name = cfg.get('name', 'none').lower()
+        if scheduler_name == 'onecyclelr':
             max_lrs = [pg['lr'] for pg in self.optimizer.param_groups]
-            # CORRECTED: Accessing nested config keys
             total_steps = (self.cfg['training']['epochs'] * len(self.train_loader)) // self.cfg['training']['accumulation_steps']
-            return OneCycleLR(
-                self.optimizer, max_lr=max_lrs, total_steps=total_steps,
-                pct_start=cfg['pct_start'], div_factor=cfg['div_factor'], final_div_factor=cfg['final_div_factor']
-            )
+            return OneCycleLR(self.optimizer, max_lr=max_lrs, total_steps=total_steps, pct_start=cfg['pct_start'], div_factor=cfg['div_factor'], final_div_factor=cfg['final_div_factor'])
+        elif scheduler_name == 'constant_lr':
+            self.logger.info("Using ConstantLR scheduler.")
+            return ConstantLR(self.optimizer, factor=1.0, total_iters=self.cfg['training']['epochs'])
+        self.logger.warning(f"Scheduler '{scheduler_name}' not recognized. No scheduler will be used.")
         return None
 
     def _set_parameter_groups_for_epoch(self, epoch: int):
-        # CORRECTED: Accessing nested config key
         is_frozen_phase = epoch <= self.cfg['training']['freeze_backbone_epochs']
         backbone_group = next((g for g in self.optimizer.param_groups if g['name'] == 'backbone'), None)
-        
         if backbone_group is None: return
-
         requires_grad_state = not is_frozen_phase
         if backbone_group['params'][0].requires_grad != requires_grad_state:
             if requires_grad_state:
                 self.logger.info(f"Epoch {epoch}: Backbone UNFROZEN.")
             else:
                 self.logger.info(f"Epoch {epoch}: Backbone FROZEN.")
-            
-            for param in backbone_group['params']:
-                param.requires_grad = requires_grad_state
+            for param in backbone_group['params']: param.requires_grad = requires_grad_state
             self.logger.info(f"Trainable params updated: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
 
     def _create_criterion(self):
-        # CORRECTED: Accessing nested config keys
         loss_cfg = self.cfg['training']['loss']
         class_weights = self.train_loader.dataset.get_class_weights().to(self.device) if loss_cfg['use_class_weights'] else None
-        
         if loss_cfg['type'].lower() == 'combined':
-            return CombinedLoss(
-                num_classes=self.cfg['data']['num_classes'], smoothing=loss_cfg['label_smoothing'],
-                focal_alpha=loss_cfg['focal_alpha'], focal_gamma=loss_cfg['focal_gamma'],
-                ce_weight=loss_cfg['weights']['ce'], focal_weight=loss_cfg['weights']['focal'],
-                class_weights_tensor=class_weights
-            ).to(self.device)
+            return CombinedLoss(num_classes=self.cfg['data']['num_classes'], smoothing=loss_cfg['label_smoothing'], focal_alpha=loss_cfg['focal_alpha'], focal_gamma=loss_cfg['focal_gamma'], ce_weight=loss_cfg['weights']['ce'], focal_weight=loss_cfg['weights']['focal'], class_weights_tensor=class_weights).to(self.device)
         return nn.CrossEntropyLoss(label_smoothing=loss_cfg['label_smoothing'], weight=class_weights).to(self.device)
 
     def _update_history(self, train_loss, val_loss, metrics):
-        self.history['train_loss'].append(train_loss)
-        self.history['val_loss'].append(val_loss)
+        self.history['train_loss'].append(train_loss); self.history['val_loss'].append(val_loss)
         for k, v in metrics.items(): self.history[f"val_{k}"].append(v)
         if self.scheduler:
             for i, pg in enumerate(self.optimizer.param_groups): self.history[f"lr_group_{pg.get('name', i)}"].append(pg['lr'])
 
     def _is_metric_better(self, new_metric):
-        # CORRECTED: Accessing nested config keys
-        metric_name = self.cfg['evaluation']['early_stopping']['metric']
-        delta = self.cfg['evaluation']['early_stopping']['min_delta']
+        metric_name = self.cfg['evaluation']['early_stopping']['metric']; delta = self.cfg['evaluation']['early_stopping']['min_delta']
         return new_metric < self.best_metric - delta if 'loss' in metric_name else new_metric > self.best_metric + delta
 
     def _load_ssl_weights(self, model):
@@ -306,18 +292,39 @@ class EnhancedFinetuner:
                 msg = model.load_state_dict(ssl_sd, strict=False)
                 self.logger.info(f"SSL weights loaded. Missing keys in model: {msg.missing_keys}. Unexpected keys in checkpoint: {msg.unexpected_keys}")
             else: self.logger.error("Could not find 'model_backbone_state_dict' in the SSL checkpoint.")
-        except Exception as e:
-            self.logger.error(f"Failed to load SSL weights from {path}: {e}", exc_info=True)
+        except Exception as e: self.logger.error(f"Failed to load SSL weights from {path}: {e}", exc_info=True)
 
     def _load_finetune_checkpoint(self, path):
-        # Your checkpoint loading logic can go here
-        pass
+        if not path or not os.path.exists(path):
+            self.logger.warning(f"Fine-tune checkpoint path provided but not found: {path}")
+            return
+        self.logger.info(f"Resuming fine-tune state from: {path}")
+        try:
+            ckpt = torch.load(path, map_location=self.device)
+            model_to_load = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
+            model_to_load.load_state_dict(ckpt['model_state_dict'])
+            self.optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+            if self.scheduler and 'scheduler_state_dict' in ckpt: self.scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+            if self.ema and 'ema_state_dict' in ckpt: self.ema.load_state_dict(ckpt['ema_state_dict'])
+            self.start_epoch = ckpt.get('epoch', 0) + 1
+            self.best_metric = ckpt.get('best_val_metric', self.best_metric)
+            self.logger.info(f"Resumed from epoch {self.start_epoch - 1}. Best metric so far: {self.best_metric:.4f}")
+        except Exception as e: self.logger.error(f"Failed to load fine-tune checkpoint from {path}: {e}", exc_info=True)
 
-    def _save_checkpoint(self, epoch, is_best=False):
+    def _save_checkpoint(self, epoch, is_best=False, final_save=False):
         model_to_save = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
-        data = { 'epoch': epoch, 'model_state_dict': model_to_save.state_dict(), 'optimizer_state_dict': self.optimizer.state_dict(), 'best_val_metric': self.best_metric, 'config': self.cfg }
+        data = {'epoch': epoch, 'model_state_dict': model_to_save.state_dict(), 'optimizer_state_dict': self.optimizer.state_dict(), 'best_val_metric': self.best_metric, 'config': self.cfg}
         if self.scheduler: data['scheduler_state_dict'] = self.scheduler.state_dict()
         if self.ema: data['ema_state_dict'] = self.ema.state_dict()
-        path = os.path.join(self.checkpoints_dir, 'best_model.pth' if is_best else f'checkpoint_epoch_{epoch}.pth')
+
+        if is_best:
+            path = os.path.join(self.checkpoints_dir, 'best_model.pth')
+            self.logger.info(f"Saving best model checkpoint to {path}")
+        elif final_save:
+            path = os.path.join(self.checkpoints_dir, f'checkpoint_epoch_{epoch}_final.pth')
+            self.logger.info(f"Saving final model checkpoint to {path}")
+        else:
+            path = os.path.join(self.checkpoints_dir, f'checkpoint_epoch_{epoch}.pth')
+            self.logger.info(f"Saving periodic checkpoint to {path}")
+
         torch.save(data, path)
-        self.logger.info(f"Saved checkpoint to {path}")

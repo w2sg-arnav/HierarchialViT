@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 # ===================================================================
 # == Custom Augmentation Modules
-# == These helper classes operate on PyTorch Tensors.
 # ===================================================================
 
 class EnhancedColorJitter(torch.nn.Module):
@@ -112,40 +111,29 @@ class CottonLeafDiseaseAugmentation:
     def __init__(self, img_size: Tuple[int, int], severity: str = 'moderate'):
         self.img_size = img_size
         self.severity = severity
-
         severity_configs = {
             'mild':     {'rot': 15, 'scale': (0.8, 1.2), 'blur_p': 0.2, 'erase_p': 0.1, 'light_p': 0.4},
             'moderate': {'rot': 25, 'scale': (0.7, 1.3), 'blur_p': 0.25,'erase_p': 0.15,'light_p': 0.5},
             'strong':   {'rot': 35, 'scale': (0.6, 1.4), 'blur_p': 0.3, 'erase_p': 0.2, 'light_p': 0.6}
         }
         params = severity_configs.get(severity, severity_configs['moderate'])
-
-        # This pipeline is carefully ordered to ensure correct types for each transform.
         self.transform_pipeline = T_v2.Compose([
-            # 1. Geometric transforms are efficient on PIL Images.
             T_v2.RandomResizedCrop(size=img_size, scale=params['scale'], ratio=(0.75, 1.33), interpolation=T_v2.InterpolationMode.BICUBIC, antialias=True),
             T_v2.RandomHorizontalFlip(p=0.5),
             T_v2.RandomVerticalFlip(p=0.5),
             T_v2.RandomRotation(degrees=params['rot']),
-
-            # 2. Convert to Tensor BEFORE pixel-level transforms.
-            T_v2.ToImage(),                          # Converts PIL Image to uint8 Tensor [C, H, W]
-            T_v2.ToDtype(torch.float32, scale=True), # Converts to float32 Tensor [0.0, 1.0]
-
-            # 3. Color/pixel-level transforms operate on float Tensors.
+            T_v2.ToImage(),
+            T_v2.ToDtype(torch.float32, scale=True),
             EnhancedColorJitter(brightness=0.3, contrast=0.3, saturation=0.25, hue=0.15),
             T_v2.RandomApply([LightingVariation()], p=params['light_p']),
             T_v2.RandomApply([T_v2.GaussianBlur(kernel_size=(3, 9), sigma=(0.1, 1.5))], p=params['blur_p']),
             T_v2.RandomApply([GaussianNoise(std=0.02)], p=0.3),
-            
-            # 4. Erasing and final normalization on float Tensors.
             T_v2.RandomErasing(p=params['erase_p'], scale=(0.02, 0.12), ratio=(0.3, 3.0), value=0),
             T_v2.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
         logger.info(f"CottonLeafDiseaseAugmentation initialized with severity '{severity}'.")
 
     def __call__(self, pil_image: Image.Image) -> torch.Tensor:
-        """Applies the transform pipeline to a single PIL image."""
         return self.transform_pipeline(pil_image)
 
 
@@ -156,19 +144,10 @@ def create_cotton_leaf_augmentation(
 ) -> T_v2.Compose:
     """
     Factory function to create the appropriate augmentation pipeline.
-    
-    Args:
-        strategy (str): 'minimal' for validation, or 'cotton_disease' for training.
-        img_size (tuple): Target image size (H, W).
-        **kwargs: Additional arguments, like 'severity' for training augmentations.
-
-    Returns:
-        A torchvision.transforms.v2.Compose object.
     """
     logger.info(f"Creating augmentation strategy: '{strategy}' for image size {img_size}")
 
     if strategy == 'minimal':
-        # Used for validation: resize, center crop, and normalize.
         return T_v2.Compose([
             T_v2.Resize(img_size, interpolation=T_v2.InterpolationMode.BICUBIC, antialias=True),
             T_v2.CenterCrop(img_size),
@@ -185,8 +164,10 @@ def create_cotton_leaf_augmentation(
         
         return CottonLeafDiseaseAugmentation(
             img_size=img_size,
-            severity=severity.
+            severity=severity
         )
+        # ^^^ The extra parenthesis was here. It has been removed. ^^^
+
     else:
         logger.error(f"Strategy '{strategy}' is unknown. Please use 'minimal' or 'cotton_disease'.")
         raise ValueError(f"Unknown augmentation strategy: {strategy}")
