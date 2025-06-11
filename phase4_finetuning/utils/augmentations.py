@@ -185,7 +185,7 @@ def create_cotton_leaf_augmentation(
         
         return CottonLeafDiseaseAugmentation(
             img_size=img_size,
-            severity=severity
+            severity=severity.
         )
     else:
         logger.error(f"Strategy '{strategy}' is unknown. Please use 'minimal' or 'cotton_disease'.")

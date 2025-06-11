@@ -1,9 +1,9 @@
 # ===================================================================
-# == Main Configuration for Phase 4: Fine-tuning
+# == Main Configuration for Phase 4: Fine-tuning (100 Epoch Run)
 # ===================================================================
 
 # --- Run Setup ---
-run_name_prefix: "HVT-XL_FineTune_Run"
+run_name_prefix: "HVT-XL_FineTune_Run_100epochs"
 seed: 42
 device: "cuda"
 cudnn_benchmark: true
@@ -20,7 +20,7 @@ model:
   hvt_params:
     patch_size: 14
     embed_dim_rgb: 192
-    embed_dim_spectral: 0 # No spectral data for this fine-tuning
+    embed_dim_spectral: 0
     spectral_channels: 0
     depths: [3, 6, 24, 3]
     num_heads: [6, 12, 24, 48]
@@ -31,8 +31,7 @@ model:
     drop_path_rate: 0.2
     norm_layer_name: "LayerNorm"
     use_dfca: false
-    use_gradient_checkpointing: true # Essential for large models
-    # These SSL/aux flags are not used in fine-tuning but define the arch
+    use_gradient_checkpointing: true
     ssl_enable_mae: false
     ssl_enable_contrastive: false
     enable_consistency_loss_heads: false
@@ -43,7 +42,7 @@ data:
   original_dataset_name: "Original Dataset"
   augmented_dataset_name: "Augmented Dataset"
   img_size: [448, 448]
-  num_classes: 7 # Will be updated automatically if needed
+  num_classes: 7
   train_split_ratio: 0.95
   num_workers: 4
   prefetch_factor: 2
@@ -52,25 +51,25 @@ data:
 # --- Augmentation Configuration ---
 augmentations:
   enable: true
-  strategy: "cotton_disease" # 'cotton_disease' or 'aggressive_medical'
-  severity: "moderate"      # 'mild', 'moderate', or 'strong'
-  # Mixup/CutMix are now controlled in the training section for clarity
+  strategy: "cotton_disease"
+  severity: "moderate"
   mixup_alpha: 0.2
-  cutmix_prob: 0.5 # Probability of applying CutMix if mixup isn't chosen
+  cutmix_prob: 0.5
 
 # --- Training Configuration ---
 training:
-  epochs: 50
+  epochs: 100 # Increased for a longer run
   batch_size: 16
-  accumulation_steps: 2 # Effective batch size = 32
+  accumulation_steps: 2
   amp_enabled: true
   clip_grad_norm: 1.0
-  freeze_backbone_epochs: 5 # Number of epochs to train only the head
+  freeze_backbone_epochs: 5
+  save_every_n_epochs: 10 # NEW: Save a checkpoint every 10 epochs
 
   # Optimizer settings
   optimizer:
+    lr_backbone_unfrozen: 5.0e-05
     lr_head_unfrozen: 0.001
-    lr_backbone_unfrozen: 0.00005
 
   # Scheduler settings (OneCycleLR)
   scheduler:
@@ -81,7 +80,7 @@ training:
 
   # Loss function settings
   loss:
-    type: "combined" # 'combined' or 'crossentropy'
+    type: "combined"
     use_class_weights: true
     label_smoothing: 0.1
     focal_alpha: 0.25
@@ -94,13 +93,10 @@ training:
 evaluation:
   use_ema: true
   ema_decay: 0.9999
-  use_swa: false # Stochastic Weight Averaging
-  swa_start_epoch_ratio: 0.75
-  swa_lr: 0.00002
-  tta_enabled: true # Test-Time Augmentation
+  tta_enabled: true
   early_stopping:
-    metric: "val_f1_macro" # 'val_f1_macro', 'val_accuracy', or 'val_loss'
-    patience: 15
+    metric: "val_f1_macro"
+    patience: 20 # Increased patience for a longer run
     min_delta: 0.0001
 
 # --- Torch Compile (Optional Performance Boost) ---
