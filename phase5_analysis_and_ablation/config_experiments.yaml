@@ -14,7 +14,7 @@ base_config:
     augmented_dataset_name: "Augmented Dataset"
     img_size: [448, 448]
     train_split_ratio: 0.9
-    num_workers: 4
+    num_workers: 0
     use_weighted_sampler: true
   
   model:

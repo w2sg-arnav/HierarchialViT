@@ -1,0 +1,124 @@
+2025-06-12 15:45:11 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/01_full_system_20250612-154511/01_full_system_20250612-154511_20250612_154511.log. Logger 'root' Effective Level: INFO
+2025-06-12 15:45:11 - __main__ - INFO - [run:38] - Starting fine-tuning run: 01_full_system_20250612-154511
+2025-06-12 15:45:11 - __main__ - INFO - [run:39] - Full configuration:
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+augmentations:
+  cutmix_prob: 0.2
+  mixup_alpha: 0.2
+  severity: strong
+  strategy: cotton_disease
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: Augmented Dataset
+  img_size:
+  - 448
+  - 448
+  num_workers: 0
+  original_dataset_name: Original Dataset
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.9
+  use_weighted_sampler: true
+device: cuda
+evaluation:
+  early_stopping:
+    metric: f1_macro
+    min_delta: 0.001
+    patience: 20
+  ema_decay: 0.9999
+  tta_enabled: true
+  use_ema: true
+model:
+  hvt_params:
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.2
+    embed_dim_rgb: 192
+    enable_consistency_loss_heads: false
+    mlp_ratio: 4.0
+    model_drop_rate: 0.1
+    norm_layer_name: LayerNorm
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 14
+    qkv_bias: true
+    spectral_channels: 0
+    use_dfca: false
+    use_gradient_checkpointing: true
+  resume_finetune_path: null
+  ssl_pretrained_path: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+run_name_prefix: 01_full_system
+seed: 42
+torch_compile:
+  enable: true
+  mode: reduce-overhead
+training:
+  accumulation_steps: 2
+  amp_enabled: true
+  batch_size: 16
+  clip_grad_norm: 1.0
+  epochs: 100
+  freeze_backbone_epochs: 10
+  loss:
+    focal_alpha: 0.5
+    focal_gamma: 2.0
+    label_smoothing: 0.1
+    type: CombinedLoss
+    use_class_weights: true
+    weights:
+      ce: 0.5
+      focal: 0.5
+  optimizer:
+    lr_backbone_unfrozen: 2.0e-05
+    lr_head_unfrozen: 0.0002
+  scheduler:
+    div_factor: 10
+    final_div_factor: 1000
+    name: onecyclelr
+    pct_start: 0.1
+
+2025-06-12 15:45:11 - __main__ - INFO - [run:50] - Setting up datasets and dataloaders...
+2025-06-12 15:45:11 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:148] - Creating augmentation strategy: 'cotton_disease' for image size (448, 448)
+2025-06-12 15:45:11 - phase4_finetuning.utils.augmentations - INFO - [__init__:134] - CottonLeafDiseaseAugmentation initialized with severity 'strong'.
+2025-06-12 15:45:11 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:148] - Creating augmentation strategy: 'minimal' for image size (448, 448)
+2025-06-12 15:45:11 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'train'...
+2025-06-12 15:45:13 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-12 15:45:13 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'train' size: 8223 samples.
+2025-06-12 15:45:13 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'val'...
+2025-06-12 15:45:13 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-12 15:45:13 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'val' size: 914 samples.
+2025-06-12 15:45:13 - __main__ - INFO - [run:87] - Discovered 7 classes.
+2025-06-12 15:45:13 - __main__ - INFO - [run:97] - Using WeightedRandomSampler for training.
+2025-06-12 15:45:13 - __main__ - INFO - [run:129] - Creating custom HVT model for fine-tuning...
+2025-06-12 15:45:13 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (448, 448), num_classes: 7
+2025-06-12 15:45:16 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-12 15:45:20 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-12 15:45:20 - __main__ - INFO - [run:138] - Initializing EnhancedFinetuner...
+2025-06-12 15:45:20 - phase4_finetuning.finetune.trainer - INFO - [_load_initial_weights:228] - Attempting to load SSL backbone weights from: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-06-12 15:45:56 - phase4_finetuning.finetune.trainer - ERROR - [_load_initial_weights:245] - Could not find a valid state_dict in the SSL checkpoint.
+2025-06-12 15:45:57 - phase4_finetuning.utils.ema - INFO - [_create_shadow_copy:32] - Creating EMA shadow model by re-instantiating custom HVT class.
+2025-06-12 15:46:01 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-12 15:46:05 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-12 15:46:05 - phase4_finetuning.utils.ema - INFO - [__init__:23] - EMA helper initialized with decay=0.9999. Shadow model created.
+2025-06-12 15:46:05 - phase4_finetuning.finetune.trainer - INFO - [_compile_model_if_enabled:257] - Compiling model with mode 'reduce-overhead'...
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [_compile_model_if_enabled:259] - Model compiled successfully.
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [_get_param_groups:285] - Optimizer parameter groups: Head (177,975,367 params) with LR 2.00e-04, Backbone (95,640,384 params) with LR 2.00e-05
+2025-06-12 15:46:07 - phase4_finetuning.dataset - INFO - [get_class_weights:96] - Computed class weights for split 'train': [1.04  0.897 1.049 1.03  1.069 0.834 1.156]
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [_create_criterion:325] - Using class weights in loss function.
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [__init__:59] - Trainer initialized. Model has 273,615,751 trainable parameters.
+2025-06-12 15:46:07 - __main__ - INFO - [run:149] - Starting the training and validation loop...
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [run:63] - Starting fine-tuning run. Monitoring 'f1_macro' for best model.
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 1/100 ---
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:316] - Epoch 1: Setting backbone requires_grad to False
+2025-06-12 15:46:07 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:319] - Trainable params updated: 177,975,367
+2025-06-12 15:47:57 - phase4_finetuning.finetune.trainer - WARNING - [run:99] - Training interrupted by user.
+2025-06-12 15:47:57 - phase4_finetuning.finetune.trainer - INFO - [run:105] - Training finished. Saving final model state.
+2025-06-12 15:47:57 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:372] - Saving final model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/01_full_system_20250612-154511/checkpoints/checkpoint_epoch_1_final.pth
+2025-06-12 15:48:01 - __main__ - INFO - [run:151] - Fine-tuning run '01_full_system_20250612-154511' finished successfully.

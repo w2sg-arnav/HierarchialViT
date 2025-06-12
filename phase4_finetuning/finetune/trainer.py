@@ -222,6 +222,7 @@ class EnhancedFinetuner:
     def _load_initial_weights(self, model: nn.Module) -> nn.Module:
         """
         Helper to load SSL pre-trained weights into the model before any other setup.
+        This version correctly handles loading backbone weights into the model's backbone.
         """
         if self.cfg['model'].get('ssl_pretrained_path'):
             path = self.cfg['model']['ssl_pretrained_path']
@@ -232,19 +233,37 @@ class EnhancedFinetuner:
             
             try:
                 ckpt = torch.load(path, map_location='cpu')
-                # For our custom HVT, the SSL checkpoint saves the backbone separately
-                if 'model_backbone_state_dict' in ckpt and hasattr(model, 'backbone'):
-                     ssl_sd = ckpt['model_backbone_state_dict']
-                     msg = model.backbone.load_state_dict(ssl_sd, strict=False)
-                     self.logger.info(f"SSL weights loaded into model.backbone. Missing: {msg.missing_keys}, Unexpected: {msg.unexpected_keys}")
-                # For standard timm models, there's no 'backbone' attribute, so we load into the whole model
+                
+                # --- CORRECTED LOGIC ---
+                # Check for the key used by our SSL saver
+                if 'model_backbone_state_dict' in ckpt:
+                    backbone_weights = ckpt['model_backbone_state_dict']
+                    
+                    self.logger.info("Found 'model_backbone_state_dict'. Loading into the main model with strict=False.")
+                    # Load directly into the model. `strict=False` is crucial because the fine-tuning
+                    # model has a classification head that the SSL backbone does not.
+                    msg = model.load_state_dict(backbone_weights, strict=False)
+                    
+                    self.logger.info("SSL weights loaded. Load message summary:")
+                    if msg.missing_keys:
+                        # We EXPECT missing keys (the final classification head), which is a good sign.
+                        self.logger.info(f"  > Missing keys (as expected for fine-tuning): {msg.missing_keys}")
+                    if msg.unexpected_keys:
+                        # We don't expect unexpected keys. This would be a warning.
+                        self.logger.warning(f"  > Unexpected keys in model state dict: {msg.unexpected_keys}")
+                
+                # Fallback for checkpoints that might just have a single model state dict
                 elif 'model_state_dict' in ckpt:
-                     msg = model.load_state_dict(ckpt['model_state_dict'], strict=False)
-                     self.logger.info(f"SSL weights loaded into model directly. Missing: {msg.missing_keys}, Unexpected: {msg.unexpected_keys}")
+                    self.logger.warning("Found 'model_state_dict' instead of 'model_backbone_state_dict'. Attempting to load with strict=False.")
+                    msg = model.load_state_dict(ckpt['model_state_dict'], strict=False)
+                    self.logger.info(f"Load message: {msg}")
+                
                 else:
-                    self.logger.error("Could not find a valid state_dict in the SSL checkpoint.")
+                    self.logger.error("Could not find a valid state_dict ('model_backbone_state_dict' or 'model_state_dict') in the SSL checkpoint.")
+                    
             except Exception as e:
                 self.logger.error(f"Failed to load SSL weights from {path}: {e}", exc_info=True)
+                
         return model
 
     def _compile_model_if_enabled(self, model: nn.Module) -> nn.Module:

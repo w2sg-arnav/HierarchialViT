@@ -102,3 +102,23 @@ training:
 2025-06-12 15:43:00 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
 2025-06-12 15:43:00 - __main__ - INFO - [run:138] - Initializing EnhancedFinetuner...
 2025-06-12 15:43:00 - phase4_finetuning.finetune.trainer - INFO - [_load_initial_weights:228] - Attempting to load SSL backbone weights from: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-06-12 15:43:40 - phase4_finetuning.finetune.trainer - ERROR - [_load_initial_weights:245] - Could not find a valid state_dict in the SSL checkpoint.
+2025-06-12 15:43:42 - phase4_finetuning.utils.ema - INFO - [_create_shadow_copy:32] - Creating EMA shadow model by re-instantiating custom HVT class.
+2025-06-12 15:43:46 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-12 15:43:49 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-12 15:43:50 - phase4_finetuning.utils.ema - INFO - [__init__:23] - EMA helper initialized with decay=0.9999. Shadow model created.
+2025-06-12 15:43:50 - phase4_finetuning.finetune.trainer - INFO - [_compile_model_if_enabled:257] - Compiling model with mode 'reduce-overhead'...
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [_compile_model_if_enabled:259] - Model compiled successfully.
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [_get_param_groups:285] - Optimizer parameter groups: Head (177,975,367 params) with LR 2.00e-04, Backbone (95,640,384 params) with LR 2.00e-05
+2025-06-12 15:43:52 - phase4_finetuning.dataset - INFO - [get_class_weights:96] - Computed class weights for split 'train': [1.04  0.897 1.049 1.03  1.069 0.834 1.156]
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [_create_criterion:325] - Using class weights in loss function.
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [__init__:59] - Trainer initialized. Model has 273,615,751 trainable parameters.
+2025-06-12 15:43:52 - __main__ - INFO - [run:149] - Starting the training and validation loop...
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [run:63] - Starting fine-tuning run. Monitoring 'f1_macro' for best model.
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 1/100 ---
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:316] - Epoch 1: Setting backbone requires_grad to False
+2025-06-12 15:43:52 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:319] - Trainable params updated: 177,975,367
+2025-06-12 15:45:04 - phase4_finetuning.finetune.trainer - WARNING - [run:99] - Training interrupted by user.
+2025-06-12 15:45:04 - phase4_finetuning.finetune.trainer - INFO - [run:105] - Training finished. Saving final model state.
+2025-06-12 15:45:04 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:372] - Saving final model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/01_full_system_20250612-154248/checkpoints/checkpoint_epoch_1_final.pth
+2025-06-12 15:45:15 - __main__ - INFO - [run:151] - Fine-tuning run '01_full_system_20250612-154248' finished successfully.
