@@ -18,7 +18,7 @@ base_config:
     use_weighted_sampler: true
   
   model:
-    ssl_pretrained_path: "phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_best_probe.pth" # SSL Model
+    ssl_pretrained_path: "phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth" # SSL Model
     resume_finetune_path: null
     hvt_params:
       patch_size: 14
