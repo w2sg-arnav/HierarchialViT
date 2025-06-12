@@ -7,6 +7,7 @@ import os
 import random
 import numpy as np
 import logging
+import timm # <--- ADD THIS IMPORT
 from datetime import datetime
 from torch.utils.data import DataLoader, WeightedRandomSampler
 
@@ -99,13 +100,39 @@ def run(cfg):
     train_loader = DataLoader(train_dataset, batch_size=cfg['training']['batch_size'], sampler=sampler, shuffle=(sampler is None), drop_last=True, **loader_args)
     val_loader = DataLoader(val_dataset, batch_size=cfg['training']['batch_size'] * 2, shuffle=False, **loader_args)
 
-    # --- Model ---
-    logger.info("Creating HVT model for fine-tuning...")
-    model = create_disease_aware_hvt(
-        current_img_size=img_size,
-        num_classes=cfg['data']['num_classes'],
-        model_params_dict=cfg['model']['hvt_params']
-    )
+    # --- Model Creation (Now Configurable) ---
+    # This is the new, flexible model creation block.
+    if 'model_override' in cfg and cfg['model_override'] is not None:
+        override_cfg = cfg['model_override']
+        model_type = override_cfg.get('type', 'timm')
+        model_name = override_cfg.get('name')
+        
+        logger.info(f"--- MODEL OVERRIDE IN EFFECT ---")
+        logger.info(f"Loading baseline model -> Type: {model_type}, Name: {model_name}")
+
+        if model_type.lower() == 'timm':
+            # Create a standard model from timm for SOTA comparison
+            model = timm.create_model(
+                model_name,
+                pretrained=True, # Always use ImageNet pre-trained weights for baselines
+                num_classes=cfg['data']['num_classes'],
+                # For ViT models, we might need to specify the image size if it's not 224
+                # For CNNs, this is usually not necessary
+                img_size=img_size if 'vit' in model_name else None 
+            )
+            # The finetuner will handle loading SSL weights (or not) based on the config,
+            # but for baselines, `ssl_pretrained_path` should be null.
+        else:
+            raise ValueError(f"Unknown model_override type specified in config: '{model_type}'")
+    else:
+        # Default behavior: create our custom HVT model
+        logger.info("Creating custom HVT model for fine-tuning...")
+        model = create_disease_aware_hvt(
+            current_img_size=img_size,
+            num_classes=cfg['data']['num_classes'],
+            model_params_dict=cfg['model']['hvt_params']
+        )
+    # --- End of New Model Creation Block ---
 
     # --- Trainer ---
     logger.info("Initializing EnhancedFinetuner...")
@@ -131,6 +158,11 @@ if __name__ == "__main__":
     # Default path assumes running from project root
     parser.add_argument("--config", type=str, default="phase4_finetuning/config.yaml", help="Path to the YAML configuration file.")
     args = parser.parse_args()
+
+    # The config file path is now relative to where you run the script
+    if not os.path.exists(args.config):
+        print(f"ERROR: Config file not found at '{args.config}'")
+        sys.exit(1)
 
     with open(args.config, 'r') as f:
         config_from_file = yaml.safe_load(f)

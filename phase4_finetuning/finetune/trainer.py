@@ -36,15 +36,25 @@ class EnhancedFinetuner:
         self.best_metric = -1.0 if self.cfg['evaluation']['early_stopping']['metric'] != 'val_loss' else float('inf')
         self.history = defaultdict(list)
 
-        self.model = self._setup_model(model)
+        # --- RESTRUCTURED INITIALIZATION ---
+        # 1. Load weights into the original model BEFORE compiling.
+        uncompiled_model = self._load_initial_weights(model).to(self.device)
+
+        # 2. Initialize EMA with the ORIGINAL, UN-COMPILED model.
+        self.ema = EMA(uncompiled_model, decay=self.cfg['evaluation']['ema_decay']) if self.cfg['evaluation']['use_ema'] else None
+        
+        # 3. NOW, compile the model for the trainer to use.
+        self.model = self._compile_model_if_enabled(uncompiled_model)
+        # --- END OF RESTRUCTURED INITIALIZATION ---
+
         self.optimizer = self._create_optimizer()
         self.scheduler = self._create_scheduler()
         self.criterion = self._create_criterion()
         self.scaler = GradScaler(enabled=self.cfg['training']['amp_enabled'])
-        self.ema = EMA(self.model, decay=self.cfg['evaluation']['ema_decay']) if self.cfg['evaluation']['use_ema'] else None
 
+        # Resuming a fine-tune run should load into the uncompiled model's state
         if self.cfg['model'].get('resume_finetune_path'):
-            self._load_finetune_checkpoint(self.cfg['model']['resume_finetune_path'])
+            self._load_finetune_checkpoint(uncompiled_model, self.cfg['model']['resume_finetune_path'])
         
         self.logger.info(f"Trainer initialized. Model has {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,} trainable parameters.")
 
@@ -117,14 +127,14 @@ class EnhancedFinetuner:
                 images, labels_a, labels_b, lam = self._cutmix_data(images, labels)
                 is_mixed = True
 
+            # Use a generic forward call, as all models (custom or timm) will return logits
             with autocast(enabled=amp_enabled):
-                outputs = self.model(rgb_img=images, mode='classify')
-                main_logits = outputs[0] if isinstance(outputs, tuple) else outputs
+                outputs = self.model(images)
                 
                 if is_mixed:
-                    loss = lam * self.criterion(main_logits, labels_a) + (1 - lam) * self.criterion(main_logits, labels_b)
+                    loss = lam * self.criterion(outputs, labels_a) + (1 - lam) * self.criterion(outputs, labels_b)
                 else:
-                    loss = self.criterion(main_logits, labels)
+                    loss = self.criterion(outputs, labels)
             
             loss_scaled = loss / accumulation_steps
             self.scaler.scale(loss_scaled).backward()
@@ -160,8 +170,7 @@ class EnhancedFinetuner:
                     if self.cfg['evaluation']['tta_enabled']:
                         outputs = self._tta_inference(model_to_eval, images)
                     else:
-                        raw_outputs = model_to_eval(rgb_img=images, mode='classify')
-                        outputs = raw_outputs[0] if isinstance(raw_outputs, tuple) else raw_outputs
+                        outputs = model_to_eval(images)
                     loss = self.criterion(outputs, labels)
                 
                 total_loss += loss.item()
@@ -179,17 +188,14 @@ class EnhancedFinetuner:
         return avg_loss, metrics
 
     def _tta_inference(self, model: nn.Module, images: torch.Tensor) -> torch.Tensor:
-        original_logits = model(rgb_img=images, mode='classify')
-        original_logits = original_logits[0] if isinstance(original_logits, tuple) else original_logits
-        
+        original_logits = model(images)
         flipped_images = T_v2.functional.hflip(images)
-        flipped_logits = model(rgb_img=flipped_images, mode='classify')
-        flipped_logits = flipped_logits[0] if isinstance(flipped_logits, tuple) else flipped_logits
-        
+        flipped_logits = model(flipped_images)
+        # Average softmax probabilities
         return (torch.softmax(original_logits, dim=1) + torch.softmax(flipped_logits, dim=1)) / 2.0
 
     def _mixup_data(self, x: torch.Tensor, y: torch.Tensor, alpha: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
-        lam = np.random.beta(alpha, alpha)
+        lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
         batch_size = x.size(0)
         index = torch.randperm(batch_size).to(self.device)
         mixed_x = lam * x + (1 - lam) * x[index, :]
@@ -213,24 +219,73 @@ class EnhancedFinetuner:
         bbx2 = np.clip(cx + cut_w // 2, 0, W); bby2 = np.clip(cy + cut_h // 2, 0, H)
         return bbx1, bby1, bbx2, bby2
         
-    def _setup_model(self, model):
-        if self.cfg['model'].get('ssl_pretrained_path'): self._load_ssl_weights(model)
+    def _load_initial_weights(self, model: nn.Module) -> nn.Module:
+        """
+        Helper to load SSL pre-trained weights into the model before any other setup.
+        """
+        if self.cfg['model'].get('ssl_pretrained_path'):
+            path = self.cfg['model']['ssl_pretrained_path']
+            self.logger.info(f"Attempting to load SSL backbone weights from: {path}")
+            if not path or not os.path.exists(path):
+                self.logger.error(f"SSL checkpoint not found at {path}. Starting with model's initial weights.")
+                return model
+            
+            try:
+                ckpt = torch.load(path, map_location='cpu')
+                # For our custom HVT, the SSL checkpoint saves the backbone separately
+                if 'model_backbone_state_dict' in ckpt and hasattr(model, 'backbone'):
+                     ssl_sd = ckpt['model_backbone_state_dict']
+                     msg = model.backbone.load_state_dict(ssl_sd, strict=False)
+                     self.logger.info(f"SSL weights loaded into model.backbone. Missing: {msg.missing_keys}, Unexpected: {msg.unexpected_keys}")
+                # For standard timm models, there's no 'backbone' attribute, so we load into the whole model
+                elif 'model_state_dict' in ckpt:
+                     msg = model.load_state_dict(ckpt['model_state_dict'], strict=False)
+                     self.logger.info(f"SSL weights loaded into model directly. Missing: {msg.missing_keys}, Unexpected: {msg.unexpected_keys}")
+                else:
+                    self.logger.error("Could not find a valid state_dict in the SSL checkpoint.")
+            except Exception as e:
+                self.logger.error(f"Failed to load SSL weights from {path}: {e}", exc_info=True)
+        return model
+
+    def _compile_model_if_enabled(self, model: nn.Module) -> nn.Module:
+        """
+        Applies torch.compile to the model if enabled in the config.
+        Returns the compiled model (or the original if compile is disabled/fails).
+        """
         if self.cfg['torch_compile']['enable'] and hasattr(torch, 'compile'):
             try:
-                model = torch.compile(model, mode=self.cfg['torch_compile']['mode'])
-                self.logger.info(f"Model compiled with mode '{self.cfg['torch_compile']['mode']}'.")
+                self.logger.info(f"Compiling model with mode '{self.cfg['torch_compile']['mode']}'...")
+                compiled_model = torch.compile(model, mode=self.cfg['torch_compile']['mode'])
+                self.logger.info("Model compiled successfully.")
+                return compiled_model
             except Exception as e:
                 self.logger.warning(f"torch.compile failed: {e}. Continuing without compilation.")
-        return model.to(self.device)
+        return model
 
     def _create_optimizer(self) -> AdamW:
         return AdamW(self._get_param_groups())
 
     def _get_param_groups(self) -> list:
-        head_name = 'classifier_head'
-        head_params = [p for n, p in self.model.named_parameters() if head_name in n and p.requires_grad]
-        backbone_params = [p for n, p in self.model.named_parameters() if head_name not in n and p.requires_grad]
+        # List of common names for classifier heads in various model architectures
+        head_names = ['head', 'fc', 'classifier']
+        
+        head_params = [p for n, p in self.model.named_parameters() if any(hn in n.lower() for hn in head_names) and p.requires_grad]
+        backbone_params = [p for n, p in self.model.named_parameters() if not any(hn in n.lower() for hn in head_names) and p.requires_grad]
+
+        # A fallback check: if we found no head params, something is wrong or it's a model with an unusual head name.
+        if not head_params:
+            self.logger.warning(f"Could not find a specific classifier head using names: {head_names}. "
+                                "Treating all parameters as 'backbone' for learning rate purposes.")
+            backbone_params = [p for p in self.model.parameters() if p.requires_grad]
+        
         opt_cfg = self.cfg['training']['optimizer']
+        num_head_params = sum(p.numel() for p in head_params)
+        num_backbone_params = sum(p.numel() for p in backbone_params)
+
+        self.logger.info(f"Optimizer parameter groups: "
+                         f"Head ({num_head_params:,} params) with LR {opt_cfg['lr_head_unfrozen']:.2e}, "
+                         f"Backbone ({num_backbone_params:,} params) with LR {opt_cfg['lr_backbone_unfrozen']:.2e}")
+
         return [
             {'params': backbone_params, 'lr': opt_cfg['lr_backbone_unfrozen'], 'name': 'backbone'},
             {'params': head_params, 'lr': opt_cfg['lr_head_unfrozen'], 'name': 'head'}
@@ -243,31 +298,36 @@ class EnhancedFinetuner:
             max_lrs = [pg['lr'] for pg in self.optimizer.param_groups]
             total_steps = (self.cfg['training']['epochs'] * len(self.train_loader)) // self.cfg['training']['accumulation_steps']
             return OneCycleLR(self.optimizer, max_lr=max_lrs, total_steps=total_steps, pct_start=cfg['pct_start'], div_factor=cfg['div_factor'], final_div_factor=cfg['final_div_factor'])
-        elif scheduler_name == 'constant_lr':
+        elif scheduler_name == 'constantlr':
             self.logger.info("Using ConstantLR scheduler.")
-            return ConstantLR(self.optimizer, factor=1.0, total_iters=self.cfg['training']['epochs'])
+            return ConstantLR(self.optimizer, factor=1.0)
         self.logger.warning(f"Scheduler '{scheduler_name}' not recognized. No scheduler will be used.")
         return None
 
     def _set_parameter_groups_for_epoch(self, epoch: int):
         is_frozen_phase = epoch <= self.cfg['training']['freeze_backbone_epochs']
         backbone_group = next((g for g in self.optimizer.param_groups if g['name'] == 'backbone'), None)
-        if backbone_group is None: return
-        requires_grad_state = not is_frozen_phase
-        if backbone_group['params'][0].requires_grad != requires_grad_state:
-            if requires_grad_state:
-                self.logger.info(f"Epoch {epoch}: Backbone UNFROZEN.")
-            else:
-                self.logger.info(f"Epoch {epoch}: Backbone FROZEN.")
-            for param in backbone_group['params']: param.requires_grad = requires_grad_state
+        if backbone_group is None or not backbone_group['params']: return # Nothing to freeze
+        
+        current_requires_grad = backbone_group['params'][0].requires_grad
+        new_requires_grad = not is_frozen_phase
+
+        if current_requires_grad != new_requires_grad:
+            self.logger.info(f"Epoch {epoch}: Setting backbone requires_grad to {new_requires_grad}")
+            for param in backbone_group['params']:
+                param.requires_grad = new_requires_grad
             self.logger.info(f"Trainable params updated: {sum(p.numel() for p in self.model.parameters() if p.requires_grad):,}")
 
     def _create_criterion(self):
         loss_cfg = self.cfg['training']['loss']
-        class_weights = self.train_loader.dataset.get_class_weights().to(self.device) if loss_cfg['use_class_weights'] else None
-        if loss_cfg['type'].lower() == 'combined':
-            return CombinedLoss(num_classes=self.cfg['data']['num_classes'], smoothing=loss_cfg['label_smoothing'], focal_alpha=loss_cfg['focal_alpha'], focal_gamma=loss_cfg['focal_gamma'], ce_weight=loss_cfg['weights']['ce'], focal_weight=loss_cfg['weights']['focal'], class_weights_tensor=class_weights).to(self.device)
-        return nn.CrossEntropyLoss(label_smoothing=loss_cfg['label_smoothing'], weight=class_weights).to(self.device)
+        class_weights = self.train_loader.dataset.get_class_weights().to(self.device) if loss_cfg.get('use_class_weights') else None
+        if class_weights is not None:
+            self.logger.info("Using class weights in loss function.")
+
+        loss_type = loss_cfg.get('type', 'CrossEntropyLoss').lower()
+        if loss_type == 'combined':
+            return CombinedLoss(num_classes=self.cfg['data']['num_classes'], smoothing=loss_cfg.get('label_smoothing', 0.0), focal_alpha=loss_cfg.get('focal_alpha', 0.25), focal_gamma=loss_cfg.get('focal_gamma', 2.0), ce_weight=loss_cfg.get('weights', {}).get('ce', 0.5), focal_weight=loss_cfg.get('weights', {}).get('focal', 0.5), class_weights_tensor=class_weights).to(self.device)
+        return nn.CrossEntropyLoss(label_smoothing=loss_cfg.get('label_smoothing', 0.0), weight=class_weights).to(self.device)
 
     def _update_history(self, train_loss, val_loss, metrics):
         self.history['train_loss'].append(train_loss); self.history['val_loss'].append(val_loss)
@@ -279,37 +339,24 @@ class EnhancedFinetuner:
         metric_name = self.cfg['evaluation']['early_stopping']['metric']; delta = self.cfg['evaluation']['early_stopping']['min_delta']
         return new_metric < self.best_metric - delta if 'loss' in metric_name else new_metric > self.best_metric + delta
 
-    def _load_ssl_weights(self, model):
-        path = self.cfg['model']['ssl_pretrained_path']
-        self.logger.info(f"Attempting to load SSL backbone weights from: {path}")
-        if not path or not os.path.exists(path):
-            self.logger.error(f"SSL checkpoint not found at {path}. Starting with random weights.")
-            return
-        try:
-            ckpt = torch.load(path, map_location=self.device)
-            ssl_sd = ckpt.get('model_backbone_state_dict')
-            if ssl_sd:
-                msg = model.load_state_dict(ssl_sd, strict=False)
-                self.logger.info(f"SSL weights loaded. Missing keys in model: {msg.missing_keys}. Unexpected keys in checkpoint: {msg.unexpected_keys}")
-            else: self.logger.error("Could not find 'model_backbone_state_dict' in the SSL checkpoint.")
-        except Exception as e: self.logger.error(f"Failed to load SSL weights from {path}: {e}", exc_info=True)
-
-    def _load_finetune_checkpoint(self, path):
+    def _load_finetune_checkpoint(self, model_to_load_into: nn.Module, path: str):
         if not path or not os.path.exists(path):
             self.logger.warning(f"Fine-tune checkpoint path provided but not found: {path}")
             return
         self.logger.info(f"Resuming fine-tune state from: {path}")
         try:
             ckpt = torch.load(path, map_location=self.device)
-            model_to_load = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
-            model_to_load.load_state_dict(ckpt['model_state_dict'])
+            model_to_load_into.load_state_dict(ckpt['model_state_dict'])
             self.optimizer.load_state_dict(ckpt['optimizer_state_dict'])
-            if self.scheduler and 'scheduler_state_dict' in ckpt: self.scheduler.load_state_dict(ckpt['scheduler_state_dict'])
-            if self.ema and 'ema_state_dict' in ckpt: self.ema.load_state_dict(ckpt['ema_state_dict'])
+            if self.scheduler and 'scheduler_state_dict' in ckpt and ckpt['scheduler_state_dict'] is not None:
+                self.scheduler.load_state_dict(ckpt['scheduler_state_dict'])
+            if self.ema and 'ema_state_dict' in ckpt and ckpt['ema_state_dict'] is not None:
+                self.ema.shadow_model.load_state_dict(ckpt['ema_state_dict'])
             self.start_epoch = ckpt.get('epoch', 0) + 1
             self.best_metric = ckpt.get('best_val_metric', self.best_metric)
             self.logger.info(f"Resumed from epoch {self.start_epoch - 1}. Best metric so far: {self.best_metric:.4f}")
-        except Exception as e: self.logger.error(f"Failed to load fine-tune checkpoint from {path}: {e}", exc_info=True)
+        except Exception as e:
+            self.logger.error(f"Failed to load fine-tune checkpoint from {path}: {e}", exc_info=True)
 
     def _save_checkpoint(self, epoch, is_best=False, final_save=False):
         model_to_save = self.model._orig_mod if hasattr(self.model, '_orig_mod') else self.model
