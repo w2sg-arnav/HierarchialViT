@@ -5,6 +5,8 @@ import os
 import sys
 import copy
 import logging
+import time
+from datetime import timedelta
 
 # --- Path Setup ---
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,13 +15,12 @@ if _project_root not in sys.path: sys.path.insert(0, _project_root)
 
 # --- Configuration ---
 EXPERIMENTS_CONFIG_PATH = os.path.join(_current_dir, "config_experiments.yaml")
-PYTHON_EXECUTABLE = sys.executable # Use the same python that runs this script
-# Point to the main trainer script from the previous phase
+PYTHON_EXECUTABLE = sys.executable
 MAIN_TRAINER_SCRIPT = os.path.join(_project_root, "phase4_finetuning/main.py")
 TEMP_CONFIG_DIR = os.path.join(_current_dir, "temp_configs")
 os.makedirs(TEMP_CONFIG_DIR, exist_ok=True)
 
-logging.basicConfig(level=logging.INFO, format='[%(asctime)s - %(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s - Orchestrator - %(levelname)s] %(message)s')
 
 def deep_update(d, u):
     for k, v in u.items():
@@ -28,6 +29,10 @@ def deep_update(d, u):
         else:
             d[k] = v
     return d
+
+def format_duration(seconds):
+    """Formats a duration in seconds into a human-readable string H:M:S."""
+    return str(timedelta(seconds=int(seconds)))
 
 def main():
     logging.info("======== Starting Experiment Orchestrator ========")
@@ -40,15 +45,18 @@ def main():
 
     base_config = config_data['base_config']
     experiments = config_data['experiments']
+    
+    overall_start_time = time.time()
+    num_experiments = len(experiments)
 
-    for exp in experiments:
+    for i, exp in enumerate(experiments):
         exp_name = exp['name']
-        logging.info(f"\n{'='*20} Preparing Experiment: {exp_name} {'='*20}")
+        logging.info(f"\n{'='*25} Preparing Experiment {i+1}/{num_experiments}: {exp_name} {'='*25}")
 
         exp_config = copy.deepcopy(base_config)
         if 'changes' in exp:
             exp_config = deep_update(exp_config, exp['changes'])
-        if 'model_override' in exp: # Handle SOTA model swaps
+        if 'model_override' in exp:
             exp_config['model_override'] = exp['model_override']
 
         exp_config['run_name_prefix'] = exp_name
@@ -62,21 +70,38 @@ def main():
         command = [PYTHON_EXECUTABLE, MAIN_TRAINER_SCRIPT, "--config", temp_config_path]
         
         logging.info(f"Executing: {' '.join(command)}")
-        try:
-            # Note: For long runs, you might want to run this in the background
-            # or use a more robust job management system.
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in iter(process.stdout.readline, ''):
-                sys.stdout.write(line) # Print live output
-            process.wait()
-            if process.returncode != 0:
-                logging.error(f"Experiment {exp_name} failed with return code {process.returncode}")
-                break
-        except Exception as e:
-            logging.error(f"Failed to execute experiment {exp_name}: {e}", exc_info=True)
-            break
+        logging.info("Subprocess output will be displayed below. This may take a long time.")
+        
+        exp_start_time = time.time()
+        
+        # --- CHANGE: Use subprocess.run to let the child process control the terminal ---
+        # This fixes the tqdm repetitive logging issue.
+        # We set capture_output=True to get stdout/stderr after completion for logging.
+        result = subprocess.run(
+            command, 
+            capture_output=True, 
+            text=True, 
+            check=False # Set to False to handle non-zero exit codes manually
+        )
+        
+        exp_end_time = time.time()
+        exp_duration = exp_end_time - exp_start_time
 
-    logging.info("======== Experiment Orchestrator Finished ========")
+        if result.returncode == 0:
+            logging.info(f"--- Experiment {exp_name} finished successfully in {format_duration(exp_duration)} ---")
+        else:
+            logging.error(f"!!! Experiment {exp_name} failed with return code {result.returncode} after {format_duration(exp_duration)} !!!")
+            logging.error("--- STDOUT ---")
+            logging.error(result.stdout)
+            logging.error("--- STDERR ---")
+            logging.error(result.stderr)
+            logging.error("Stopping orchestrator due to failure.")
+            break # Stop on first error
+            
+    overall_end_time = time.time()
+    total_duration = overall_end_time - overall_start_time
+    logging.info(f"\n======== Experiment Orchestrator Finished ========")
+    logging.info(f"Total run time for all experiments: {format_duration(total_duration)}")
 
 if __name__ == "__main__":
     main()

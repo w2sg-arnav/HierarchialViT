@@ -119,3 +119,7 @@ training:
 2025-06-12 15:49:44 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 1/100 ---
 2025-06-12 15:49:44 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:335] - Epoch 1: Setting backbone requires_grad to False
 2025-06-12 15:49:44 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:338] - Trainable params updated: 177,975,367
+2025-06-12 15:59:34 - phase4_finetuning.finetune.trainer - WARNING - [run:99] - Training interrupted by user.
+2025-06-12 15:59:34 - phase4_finetuning.finetune.trainer - INFO - [run:105] - Training finished. Saving final model state.
+2025-06-12 15:59:34 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:391] - Saving final model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/01_full_system_20250612-154924/checkpoints/checkpoint_epoch_1_final.pth
+2025-06-12 15:59:37 - __main__ - INFO - [run:151] - Fine-tuning run '01_full_system_20250612-154924' finished successfully.

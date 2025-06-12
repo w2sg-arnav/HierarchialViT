@@ -11,7 +11,7 @@ data:
   img_size:
   - 448
   - 448
-  num_workers: 0
+  num_workers: 4
   original_dataset_name: Original Dataset
   root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
     for Cotton Leaf Disease Detection
@@ -54,14 +54,14 @@ model:
 run_name_prefix: 01_full_system
 seed: 42
 torch_compile:
-  enable: true
+  enable: false
   mode: reduce-overhead
 training:
   accumulation_steps: 2
   amp_enabled: true
   batch_size: 16
   clip_grad_norm: 1.0
-  epochs: 100
+  epochs: 50
   freeze_backbone_epochs: 10
   loss:
     focal_alpha: 0.5
