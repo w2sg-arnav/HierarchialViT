@@ -1,0 +1,82 @@
+PACKAGE_ROOT_PATH: phase4_finetuning
+PROJECT_ROOT_PATH: .
+augmentations:
+  cutmix_prob: 0.0
+  mixup_alpha: 0.0
+  severity: strong
+  strategy: minimal
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: Augmented Dataset
+  img_size:
+  - 448
+  - 448 
+  num_workers: 4
+  original_dataset_name: Original Dataset
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.9
+  use_weighted_sampler: true
+device: cuda
+evaluation:
+  early_stopping:
+    metric: f1_macro
+    min_delta: 0.001
+    patience: 20
+  ema_decay: 0.9999
+  tta_enabled: true
+  use_ema: true
+model:
+  hvt_params:
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.2
+    embed_dim_rgb: 192
+    enable_consistency_loss_heads: false
+    mlp_ratio: 4.0
+    model_drop_rate: 0.1
+    norm_layer_name: LayerNorm
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 14
+    qkv_bias: true
+    spectral_channels: 0
+    use_dfca: false
+    use_gradient_checkpointing: true
+  resume_finetune_path: null
+  ssl_pretrained_path: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+run_name_prefix: 03_ablation_no_advanced_augs
+seed: 42
+torch_compile:
+  enable: false
+  mode: reduce-overhead
+training:
+  accumulation_steps: 2
+  amp_enabled: true
+  batch_size: 16
+  clip_grad_norm: 1.0
+  epochs: 100
+  freeze_backbone_epochs: 10
+  loss:
+    focal_alpha: 0.5
+    focal_gamma: 2.0
+    label_smoothing: 0.1
+    type: CombinedLoss
+    use_class_weights: true
+    weights:
+      ce: 0.5
+      focal: 0.5
+  optimizer:
+    lr_backbone_unfrozen: 2.0e-05
+    lr_head_unfrozen: 0.0002
+  scheduler:
+    div_factor: 10
+    final_div_factor: 1000
+    name: onecyclelr
+    pct_start: 0.1
