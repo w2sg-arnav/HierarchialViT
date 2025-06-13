@@ -7,6 +7,7 @@ import copy
 import logging
 import time
 from datetime import timedelta
+import argparse # <--- CHANGE: Import argparse
 
 # --- Path Setup ---
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,6 +36,18 @@ def format_duration(seconds):
     return str(timedelta(seconds=int(seconds)))
 
 def main():
+    # --- CHANGE: Add argument parsing to specify a starting point ---
+    parser = argparse.ArgumentParser(description="Run a sequence of fine-tuning experiments.")
+    parser.add_argument(
+        "--start-from",
+        type=str,
+        default=None,
+        help="The name of the experiment to start from. Skips all preceding experiments in the config file."
+    )
+    args = parser.parse_args()
+    start_experiment_name = args.start_from
+    # --- END OF CHANGE ---
+
     logging.info("======== Starting Experiment Orchestrator ========")
     if not os.path.exists(MAIN_TRAINER_SCRIPT):
         logging.error(f"Main trainer script not found at {MAIN_TRAINER_SCRIPT}")
@@ -49,8 +62,25 @@ def main():
     overall_start_time = time.time()
     num_experiments = len(experiments)
 
+    # --- CHANGE: Logic to handle skipping experiments ---
+    processing_started = start_experiment_name is None
+    if not processing_started:
+        logging.info(f"Attempting to resume from experiment: '{start_experiment_name}'")
+    # --- END OF CHANGE ---
+
     for i, exp in enumerate(experiments):
         exp_name = exp['name']
+
+        # --- CHANGE: Check if we should skip this experiment ---
+        if not processing_started:
+            if exp_name == start_experiment_name:
+                processing_started = True
+                logging.info(f"Found start experiment '{exp_name}'. Resuming execution...")
+            else:
+                logging.info(f"Skipping completed experiment ({i+1}/{num_experiments}): {exp_name}")
+                continue
+        # --- END OF CHANGE ---
+        
         logging.info(f"\n{'='*25} Preparing Experiment {i+1}/{num_experiments}: {exp_name} {'='*25}")
 
         exp_config = copy.deepcopy(base_config)
@@ -74,23 +104,19 @@ def main():
         
         exp_start_time = time.time()
         
-        # --- CHANGE: Use subprocess.Popen for live, unbuffered output ---
-        # `bufsize=1` means line-buffered. `universal_newlines=True` is equivalent to `text=True`.
         process = subprocess.Popen(
             command, 
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, # Redirect stderr to stdout
+            stderr=subprocess.STDOUT,
             bufsize=1,
             universal_newlines=True
         )
 
-        # Read and print the output line by line in real-time
         for line in iter(process.stdout.readline, ''):
             sys.stdout.write(line)
             sys.stdout.flush()
 
-        process.wait() # Wait for the subprocess to complete
-        # --- END OF CHANGE ---
+        process.wait()
         
         exp_end_time = time.time()
         exp_duration = exp_end_time - exp_start_time
