@@ -70,33 +70,38 @@ def main():
         command = [PYTHON_EXECUTABLE, MAIN_TRAINER_SCRIPT, "--config", temp_config_path]
         
         logging.info(f"Executing: {' '.join(command)}")
-        logging.info("Subprocess output will be displayed below. This may take a long time.")
+        logging.info("--- Subprocess Live Output Starts Below ---")
         
         exp_start_time = time.time()
         
-        # --- CHANGE: Use subprocess.run to let the child process control the terminal ---
-        # This fixes the tqdm repetitive logging issue.
-        # We set capture_output=True to get stdout/stderr after completion for logging.
-        result = subprocess.run(
+        # --- CHANGE: Use subprocess.Popen for live, unbuffered output ---
+        # `bufsize=1` means line-buffered. `universal_newlines=True` is equivalent to `text=True`.
+        process = subprocess.Popen(
             command, 
-            capture_output=True, 
-            text=True, 
-            check=False # Set to False to handle non-zero exit codes manually
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT, # Redirect stderr to stdout
+            bufsize=1,
+            universal_newlines=True
         )
+
+        # Read and print the output line by line in real-time
+        for line in iter(process.stdout.readline, ''):
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+        process.wait() # Wait for the subprocess to complete
+        # --- END OF CHANGE ---
         
         exp_end_time = time.time()
         exp_duration = exp_end_time - exp_start_time
 
-        if result.returncode == 0:
+        logging.info("--- Subprocess Live Output Ended ---")
+        if process.returncode == 0:
             logging.info(f"--- Experiment {exp_name} finished successfully in {format_duration(exp_duration)} ---")
         else:
-            logging.error(f"!!! Experiment {exp_name} failed with return code {result.returncode} after {format_duration(exp_duration)} !!!")
-            logging.error("--- STDOUT ---")
-            logging.error(result.stdout)
-            logging.error("--- STDERR ---")
-            logging.error(result.stderr)
+            logging.error(f"!!! Experiment {exp_name} failed with return code {process.returncode} after {format_duration(exp_duration)} !!!")
             logging.error("Stopping orchestrator due to failure.")
-            break # Stop on first error
+            break
             
     overall_end_time = time.time()
     total_duration = overall_end_time - overall_start_time

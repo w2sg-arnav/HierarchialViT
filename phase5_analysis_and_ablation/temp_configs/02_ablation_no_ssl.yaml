@@ -50,8 +50,8 @@ model:
     use_dfca: false
     use_gradient_checkpointing: true
   resume_finetune_path: null
-  ssl_pretrained_path: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
-run_name_prefix: 01_full_system
+  ssl_pretrained_path: null
+run_name_prefix: 02_ablation_no_ssl
 seed: 42
 torch_compile:
   enable: false

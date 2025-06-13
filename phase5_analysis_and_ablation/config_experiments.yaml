@@ -38,7 +38,7 @@ base_config:
       enable_consistency_loss_heads: false
 
   training:
-    epochs: 50
+    epochs: 100
     batch_size: 16
     accumulation_steps: 2
     freeze_backbone_epochs: 10
