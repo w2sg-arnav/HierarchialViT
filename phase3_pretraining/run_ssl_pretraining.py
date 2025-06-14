@@ -1,4 +1,3 @@
-# phase3_pretraining/run_ssl_pretraining.py
 import torch
 import os
 import sys
