@@ -270,3 +270,107 @@ training:
 2025-06-14 02:39:58 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 43: New best metric! f1_macro = 0.8843 (previously 0.8629)
 2025-06-14 02:39:58 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/best_model.pth
 2025-06-14 02:40:09 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 44/100 ---
+2025-06-14 02:44:12 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 44: Loss=0.7404, Accuracy=0.8687, F1-Macro=0.8691
+2025-06-14 02:44:12 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 1/20
+2025-06-14 02:44:12 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 45/100 ---
+2025-06-14 02:48:15 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 45: Loss=0.7388, Accuracy=0.8742, F1-Macro=0.8752
+2025-06-14 02:48:15 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 2/20
+2025-06-14 02:48:15 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 46/100 ---
+2025-06-14 02:52:17 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 46: Loss=0.7480, Accuracy=0.8665, F1-Macro=0.8651
+2025-06-14 02:52:17 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 3/20
+2025-06-14 02:52:17 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 47/100 ---
+2025-06-14 02:56:18 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 47: Loss=0.7457, Accuracy=0.8632, F1-Macro=0.8615
+2025-06-14 02:56:18 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 4/20
+2025-06-14 02:56:18 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 48/100 ---
+2025-06-14 03:00:20 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 48: Loss=0.7440, Accuracy=0.8687, F1-Macro=0.8691
+2025-06-14 03:00:20 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 5/20
+2025-06-14 03:00:20 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 49/100 ---
+2025-06-14 03:04:24 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 49: Loss=0.7168, Accuracy=0.8764, F1-Macro=0.8794
+2025-06-14 03:04:24 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 6/20
+2025-06-14 03:04:24 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 50/100 ---
+2025-06-14 03:08:27 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 50: Loss=0.7026, Accuracy=0.8829, F1-Macro=0.8850
+2025-06-14 03:08:27 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8843. Patience: 7/20
+2025-06-14 03:08:27 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:394] - Saving periodic checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/checkpoint_epoch_50.pth
+2025-06-14 03:08:33 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 51/100 ---
+2025-06-14 03:12:39 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 51: Loss=0.6850, Accuracy=0.8961, F1-Macro=0.8965
+2025-06-14 03:12:39 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 51: New best metric! f1_macro = 0.8965 (previously 0.8843)
+2025-06-14 03:12:39 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/best_model.pth
+2025-06-14 03:12:50 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 52/100 ---
+2025-06-14 03:16:56 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 52: Loss=0.6962, Accuracy=0.8939, F1-Macro=0.8943
+2025-06-14 03:16:56 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8965. Patience: 1/20
+2025-06-14 03:16:56 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 53/100 ---
+2025-06-14 03:21:00 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 53: Loss=0.7025, Accuracy=0.8807, F1-Macro=0.8807
+2025-06-14 03:21:00 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8965. Patience: 2/20
+2025-06-14 03:21:00 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 54/100 ---
+2025-06-14 03:25:02 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 54: Loss=0.7220, Accuracy=0.8851, F1-Macro=0.8842
+2025-06-14 03:25:02 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.8965. Patience: 3/20
+2025-06-14 03:25:02 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 55/100 ---
+2025-06-14 03:29:02 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 55: Loss=0.6829, Accuracy=0.9004, F1-Macro=0.9009
+2025-06-14 03:29:02 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 55: New best metric! f1_macro = 0.9009 (previously 0.8965)
+2025-06-14 03:29:02 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/best_model.pth
+2025-06-14 03:29:13 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 56/100 ---
+2025-06-14 03:33:16 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 56: Loss=0.6704, Accuracy=0.9037, F1-Macro=0.9043
+2025-06-14 03:33:16 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 56: New best metric! f1_macro = 0.9043 (previously 0.9009)
+2025-06-14 03:33:16 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/best_model.pth
+2025-06-14 03:33:26 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 57/100 ---
+2025-06-14 03:37:29 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 57: Loss=0.7032, Accuracy=0.8950, F1-Macro=0.8958
+2025-06-14 03:37:29 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9043. Patience: 1/20
+2025-06-14 03:37:29 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 58/100 ---
+2025-06-14 03:41:30 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 58: Loss=0.6833, Accuracy=0.8917, F1-Macro=0.8906
+2025-06-14 03:41:30 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9043. Patience: 2/20
+2025-06-14 03:41:30 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 59/100 ---
+2025-06-14 03:45:31 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 59: Loss=0.6934, Accuracy=0.8972, F1-Macro=0.8963
+2025-06-14 03:45:31 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9043. Patience: 3/20
+2025-06-14 03:45:31 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 60/100 ---
+2025-06-14 03:49:31 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 60: Loss=0.6587, Accuracy=0.9168, F1-Macro=0.9171
+2025-06-14 03:49:31 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 60: New best metric! f1_macro = 0.9171 (previously 0.9043)
+2025-06-14 03:49:31 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/best_model.pth
+2025-06-14 03:49:42 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:394] - Saving periodic checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/checkpoint_epoch_60.pth
+2025-06-14 03:49:47 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 61/100 ---
+2025-06-14 03:53:52 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 61: Loss=0.6913, Accuracy=0.8917, F1-Macro=0.8921
+2025-06-14 03:53:52 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 1/20
+2025-06-14 03:53:52 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 62/100 ---
+2025-06-14 03:57:52 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 62: Loss=0.6817, Accuracy=0.8972, F1-Macro=0.8978
+2025-06-14 03:57:52 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 2/20
+2025-06-14 03:57:52 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 63/100 ---
+2025-06-14 04:01:53 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 63: Loss=0.6499, Accuracy=0.9136, F1-Macro=0.9140
+2025-06-14 04:01:53 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 3/20
+2025-06-14 04:01:53 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 64/100 ---
+2025-06-14 04:05:53 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 64: Loss=0.6395, Accuracy=0.9168, F1-Macro=0.9176
+2025-06-14 04:05:53 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 4/20
+2025-06-14 04:05:53 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 65/100 ---
+2025-06-14 04:09:54 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 65: Loss=0.6508, Accuracy=0.9081, F1-Macro=0.9086
+2025-06-14 04:09:54 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 5/20
+2025-06-14 04:09:54 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 66/100 ---
+2025-06-14 04:13:54 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 66: Loss=0.6541, Accuracy=0.9048, F1-Macro=0.9065
+2025-06-14 04:13:54 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 6/20
+2025-06-14 04:13:54 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 67/100 ---
+2025-06-14 04:17:55 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 67: Loss=0.6582, Accuracy=0.9081, F1-Macro=0.9089
+2025-06-14 04:17:55 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 7/20
+2025-06-14 04:17:55 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 68/100 ---
+2025-06-14 04:21:56 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 68: Loss=0.6615, Accuracy=0.9070, F1-Macro=0.9072
+2025-06-14 04:21:56 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 8/20
+2025-06-14 04:21:56 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 69/100 ---
+2025-06-14 04:25:56 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 69: Loss=0.6524, Accuracy=0.9037, F1-Macro=0.9028
+2025-06-14 04:25:56 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 9/20
+2025-06-14 04:25:56 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 70/100 ---
+2025-06-14 04:29:55 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 70: Loss=0.6571, Accuracy=0.8961, F1-Macro=0.8959
+2025-06-14 04:29:55 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 10/20
+2025-06-14 04:29:55 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:394] - Saving periodic checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/checkpoint_epoch_70.pth
+2025-06-14 04:30:00 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 71/100 ---
+2025-06-14 04:34:02 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 71: Loss=0.6594, Accuracy=0.9059, F1-Macro=0.9065
+2025-06-14 04:34:02 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 11/20
+2025-06-14 04:34:02 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 72/100 ---
+2025-06-14 04:38:06 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 72: Loss=0.6471, Accuracy=0.9092, F1-Macro=0.9100
+2025-06-14 04:38:06 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 12/20
+2025-06-14 04:38:06 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 73/100 ---
+2025-06-14 04:42:08 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 73: Loss=0.6825, Accuracy=0.8906, F1-Macro=0.8898
+2025-06-14 04:42:08 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 13/20
+2025-06-14 04:42:08 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 74/100 ---
+2025-06-14 04:46:10 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 74: Loss=0.6358, Accuracy=0.9168, F1-Macro=0.9174
+2025-06-14 04:46:10 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.9171. Patience: 14/20
+2025-06-14 04:46:10 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 75/100 ---
+2025-06-14 04:47:56 - phase4_finetuning.finetune.trainer - WARNING - [run:99] - Training interrupted by user.
+2025-06-14 04:47:56 - phase4_finetuning.finetune.trainer - INFO - [run:105] - Training finished. Saving final model state.
+2025-06-14 04:47:56 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:391] - Saving final model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/04_ablation_no_ema_tta_20250613-234650/checkpoints/checkpoint_epoch_75_final.pth
+2025-06-14 04:48:02 - __main__ - INFO - [run:151] - Fine-tuning run '04_ablation_no_ema_tta_20250613-234650' finished successfully.
