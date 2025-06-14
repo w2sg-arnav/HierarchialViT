@@ -1,0 +1,162 @@
+2025-06-14 12:13:05 - root - INFO - [setup_logging:75] - Logging configured. Log file: /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/06_ablation_simple_loss_20250614-121305_20250614_121305.log. Logger 'root' Effective Level: INFO
+2025-06-14 12:13:05 - __main__ - INFO - [run:38] - Starting fine-tuning run: 06_ablation_simple_loss_20250614-121305
+2025-06-14 12:13:05 - __main__ - INFO - [run:39] - Full configuration:
+PACKAGE_ROOT_PATH: /teamspace/studios/this_studio/cvpr25/phase4_finetuning
+PROJECT_ROOT_PATH: /teamspace/studios/this_studio/cvpr25
+augmentations:
+  cutmix_prob: 0.2
+  mixup_alpha: 0.2
+  severity: strong
+  strategy: cotton_disease
+cudnn_benchmark: true
+data:
+  augmented_dataset_name: Augmented Dataset
+  img_size:
+  - 448
+  - 448
+  num_workers: 4
+  original_dataset_name: Original Dataset
+  root_dir: /teamspace/studios/this_studio/cvpr25/SAR-CLD-2024 A Comprehensive Dataset
+    for Cotton Leaf Disease Detection
+  train_split_ratio: 0.9
+  use_weighted_sampler: true
+device: cuda
+evaluation:
+  early_stopping:
+    metric: f1_macro
+    min_delta: 0.001
+    patience: 20
+  ema_decay: 0.9999
+  tta_enabled: true
+  use_ema: true
+model:
+  hvt_params:
+    depths:
+    - 3
+    - 6
+    - 24
+    - 3
+    drop_path_rate: 0.2
+    embed_dim_rgb: 192
+    enable_consistency_loss_heads: false
+    mlp_ratio: 4.0
+    model_drop_rate: 0.1
+    norm_layer_name: LayerNorm
+    num_heads:
+    - 6
+    - 12
+    - 24
+    - 48
+    patch_size: 14
+    qkv_bias: true
+    spectral_channels: 0
+    use_dfca: false
+    use_gradient_checkpointing: true
+  resume_finetune_path: null
+  ssl_pretrained_path: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+run_name_prefix: 06_ablation_simple_loss
+seed: 42
+torch_compile:
+  enable: false
+  mode: reduce-overhead
+training:
+  accumulation_steps: 2
+  amp_enabled: true
+  batch_size: 16
+  clip_grad_norm: 1.0
+  epochs: 100
+  freeze_backbone_epochs: 10
+  loss:
+    focal_alpha: 0.5
+    focal_gamma: 2.0
+    label_smoothing: 0.0
+    type: CrossEntropyLoss
+    use_class_weights: false
+    weights:
+      ce: 0.5
+      focal: 0.5
+  optimizer:
+    lr_backbone_unfrozen: 2.0e-05
+    lr_head_unfrozen: 0.0002
+  scheduler:
+    div_factor: 10
+    final_div_factor: 1000
+    name: onecyclelr
+    pct_start: 0.1
+
+2025-06-14 12:13:05 - __main__ - INFO - [run:50] - Setting up datasets and dataloaders...
+2025-06-14 12:13:05 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:148] - Creating augmentation strategy: 'cotton_disease' for image size (448, 448)
+2025-06-14 12:13:05 - phase4_finetuning.utils.augmentations - INFO - [__init__:134] - CottonLeafDiseaseAugmentation initialized with severity 'strong'.
+2025-06-14 12:13:05 - phase4_finetuning.utils.augmentations - INFO - [create_cotton_leaf_augmentation:148] - Creating augmentation strategy: 'minimal' for image size (448, 448)
+2025-06-14 12:13:05 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'train'...
+2025-06-14 12:13:07 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-14 12:13:07 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'train' size: 8223 samples.
+2025-06-14 12:13:07 - phase4_finetuning.dataset - INFO - [__init__:37] - Initializing Dataset for split 'val'...
+2025-06-14 12:13:07 - phase4_finetuning.dataset - INFO - [__init__:53] - Found 9137 total image paths.
+2025-06-14 12:13:07 - phase4_finetuning.dataset - INFO - [__init__:64] - Split 'val' size: 914 samples.
+2025-06-14 12:13:07 - __main__ - INFO - [run:87] - Discovered 7 classes.
+2025-06-14 12:13:07 - __main__ - INFO - [run:97] - Using WeightedRandomSampler for training.
+2025-06-14 12:13:07 - __main__ - INFO - [run:129] - Creating custom HVT model for fine-tuning...
+2025-06-14 12:13:07 - phase2_model.models.hvt - INFO - [create_disease_aware_hvt:602] - Factory: Creating DiseaseAwareHVT for img_size: (448, 448), num_classes: 7
+2025-06-14 12:13:10 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-14 12:13:12 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-14 12:13:12 - __main__ - INFO - [run:138] - Initializing EnhancedFinetuner...
+2025-06-14 12:13:12 - phase4_finetuning.finetune.trainer - INFO - [_load_initial_weights:229] - Attempting to load SSL backbone weights from: phase3_pretraining/pretrain_checkpoints_hvt_xl/hvt_xl_simclr_t4_resumed_best_probe.pth
+2025-06-14 12:13:15 - phase4_finetuning.finetune.trainer - INFO - [_load_initial_weights:242] - Found 'model_backbone_state_dict'. Loading into the main model with strict=False.
+2025-06-14 12:13:15 - phase4_finetuning.finetune.trainer - INFO - [_load_initial_weights:247] - SSL weights loaded. Load message summary:
+2025-06-14 12:13:16 - phase4_finetuning.utils.ema - INFO - [_create_shadow_copy:32] - Creating EMA shadow model by re-instantiating custom HVT class.
+2025-06-14 12:13:18 - phase2_model.models.hvt - INFO - [__init__:325] - HVT: Running RGB stream only. No fusion.
+2025-06-14 12:13:20 - phase2_model.models.hvt - INFO - [__init__:359] - DiseaseAwareHVT initialized for image size (448, 448) and 7 classes.
+2025-06-14 12:13:21 - phase4_finetuning.utils.ema - INFO - [__init__:23] - EMA helper initialized with decay=0.9999. Shadow model created.
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [_get_param_groups:304] - Optimizer parameter groups: Head (177,975,367 params) with LR 2.00e-04, Backbone (95,640,384 params) with LR 2.00e-05
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [__init__:59] - Trainer initialized. Model has 273,615,751 trainable parameters.
+2025-06-14 12:13:21 - __main__ - INFO - [run:149] - Starting the training and validation loop...
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [run:63] - Starting fine-tuning run. Monitoring 'f1_macro' for best model.
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 1/100 ---
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:335] - Epoch 1: Setting backbone requires_grad to False
+2025-06-14 12:13:21 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:338] - Trainable params updated: 177,975,367
+2025-06-14 12:17:06 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 1: Loss=1.9514, Accuracy=0.1379, F1-Macro=0.0703
+2025-06-14 12:17:06 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 1: New best metric! f1_macro = 0.0703 (previously -1.0000)
+2025-06-14 12:17:06 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:17:12 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 2/100 ---
+2025-06-14 12:20:56 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 2: Loss=1.9505, Accuracy=0.1389, F1-Macro=0.0684
+2025-06-14 12:20:56 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.0703. Patience: 1/20
+2025-06-14 12:20:56 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 3/100 ---
+2025-06-14 12:24:38 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 3: Loss=1.9492, Accuracy=0.1444, F1-Macro=0.0717
+2025-06-14 12:24:38 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 3: New best metric! f1_macro = 0.0717 (previously 0.0703)
+2025-06-14 12:24:38 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:24:50 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 4/100 ---
+2025-06-14 12:28:34 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 4: Loss=1.9475, Accuracy=0.1488, F1-Macro=0.0743
+2025-06-14 12:28:34 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 4: New best metric! f1_macro = 0.0743 (previously 0.0717)
+2025-06-14 12:28:34 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:28:45 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 5/100 ---
+2025-06-14 12:32:30 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 5: Loss=1.9456, Accuracy=0.1532, F1-Macro=0.0762
+2025-06-14 12:32:30 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 5: New best metric! f1_macro = 0.0762 (previously 0.0743)
+2025-06-14 12:32:30 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:32:41 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 6/100 ---
+2025-06-14 12:36:26 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 6: Loss=1.9434, Accuracy=0.1554, F1-Macro=0.0771
+2025-06-14 12:36:26 - phase4_finetuning.finetune.trainer - INFO - [run:89] - No improvement in f1_macro. Best: 0.0762. Patience: 1/20
+2025-06-14 12:36:26 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 7/100 ---
+2025-06-14 12:40:09 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 7: Loss=1.9408, Accuracy=0.1597, F1-Macro=0.0786
+2025-06-14 12:40:09 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 7: New best metric! f1_macro = 0.0786 (previously 0.0762)
+2025-06-14 12:40:09 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:40:20 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 8/100 ---
+2025-06-14 12:44:06 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 8: Loss=1.9378, Accuracy=0.1641, F1-Macro=0.0817
+2025-06-14 12:44:06 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 8: New best metric! f1_macro = 0.0817 (previously 0.0786)
+2025-06-14 12:44:06 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:44:17 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 9/100 ---
+2025-06-14 12:48:04 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 9: Loss=1.9345, Accuracy=0.1761, F1-Macro=0.0946
+2025-06-14 12:48:04 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 9: New best metric! f1_macro = 0.0946 (previously 0.0817)
+2025-06-14 12:48:04 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:48:16 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 10/100 ---
+2025-06-14 12:52:00 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 10: Loss=1.9307, Accuracy=0.1860, F1-Macro=0.1086
+2025-06-14 12:52:00 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 10: New best metric! f1_macro = 0.1086 (previously 0.0946)
+2025-06-14 12:52:00 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:52:11 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:394] - Saving periodic checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/checkpoint_epoch_10.pth
+2025-06-14 12:52:17 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 11/100 ---
+2025-06-14 12:52:17 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:335] - Epoch 11: Setting backbone requires_grad to True
+2025-06-14 12:52:17 - phase4_finetuning.finetune.trainer - INFO - [_set_parameter_groups_for_epoch:338] - Trainable params updated: 273,615,751
+2025-06-14 12:56:33 - phase4_finetuning.finetune.trainer - INFO - [_validate_one_epoch:187] - Validation Epoch 11: Loss=1.9265, Accuracy=0.2057, F1-Macro=0.1365
+2025-06-14 12:56:33 - phase4_finetuning.finetune.trainer - INFO - [run:83] - Epoch 11: New best metric! f1_macro = 0.1365 (previously 0.1086)
+2025-06-14 12:56:33 - phase4_finetuning.finetune.trainer - INFO - [_save_checkpoint:388] - Saving best model checkpoint to /teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/06_ablation_simple_loss_20250614-121305/checkpoints/best_model.pth
+2025-06-14 12:56:46 - phase4_finetuning.finetune.trainer - INFO - [run:72] - --- Starting Epoch 12/100 ---
