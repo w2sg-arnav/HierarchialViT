@@ -1,5 +1,7 @@
 # phase5_analysis_and_ablation/visualize_features.py
+
 import torch
+import torch.nn as nn
 import yaml
 import os
 import sys
@@ -9,9 +11,9 @@ from torch.utils.data import DataLoader
 from sklearn.manifold import TSNE
 from sklearn.decomposition import PCA
 from tqdm import tqdm
-import torch.nn as nn
+import inspect  # To inspect function arguments
 
-# --- Path Setup & Imports ---
+# --- Path Setup ---
 # Ensures the script can find modules from other project phases
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_current_dir)
@@ -25,7 +27,7 @@ from phase2_model.models.hvt import create_disease_aware_hvt
 
 def extract_features(model: nn.Module, loader: DataLoader, device: str) -> tuple[np.ndarray, np.ndarray]:
     """
-    Extracts features from the layer just before the final classifier.
+    Extracts features from the layer just before the final classifier using a forward hook.
     
     Args:
         model: The PyTorch model to evaluate.
@@ -39,27 +41,27 @@ def extract_features(model: nn.Module, loader: DataLoader, device: str) -> tuple
     features_list = []
     labels_list = []
     
-    # This hook captures the input to the final classification layer.
-    # It's a robust way to get the feature embeddings we want to visualize.
-    features = {}
+    # This dictionary will be populated by the hook
+    features_capture = {}
+    
     def get_features_hook(module, input_data, output_data):
-        # The input to the linear layer is a tuple, we want the first element
-        features['feats'] = input_data[0].detach()
+        # The input to the nn.Linear layer is a tuple; the features are the first element.
+        features_capture['feats'] = input_data[0].detach()
 
-    # The name of the final layer in your HVT is 'classifier_head'.
-    # If testing other models (like from timm), this might need to be 'head.fc' or similar.
+    # Register a forward hook on the final classification layer.
+    # This is a robust way to capture the embeddings before the final projection.
     hook_handle = model.classifier_head.register_forward_hook(get_features_hook)
 
     with torch.no_grad():
-        for images, labels in tqdm(loader, desc="Extracting features"):
-            # We don't need the output, just need to run the forward pass to trigger the hook
+        for images, labels in tqdm(loader, desc="Extracting features", leave=False):
+            # Run a forward pass to trigger the hook. The output is not needed here.
             _ = model(images.to(device))
             
             # Append captured features and labels to our lists
-            features_list.append(features['feats'].cpu().numpy())
+            features_list.append(features_capture['feats'].cpu().numpy())
             labels_list.append(labels.numpy())
             
-    hook_handle.remove() # Always remove hooks after use to prevent memory leaks
+    hook_handle.remove() # Crucial: always remove hooks after use to prevent memory leaks.
     
     return np.concatenate(features_list), np.concatenate(labels_list)
 
@@ -87,7 +89,7 @@ def main():
 
     device = cfg_ssl.get('device', 'cuda' if torch.cuda.is_available() else 'cpu')
     img_size = tuple(cfg_ssl['data']['img_size'])
-    num_classes = 7 # Assuming 7 classes
+    num_classes = 7 
 
     # --- Model Loading ---
     print("Loading models...")
@@ -99,20 +101,31 @@ def main():
     model_scratch = create_disease_aware_hvt(current_img_size=img_size, num_classes=num_classes, model_params_dict=cfg_scratch['model']['hvt_params'])
     model_scratch.load_state_dict(torch.load(ckpt_path_scratch, map_location='cpu')['model_state_dict'])
 
-    # --- Dataloader ---
+    # --- Dataloader Preparation ---
     print("Preparing validation dataloader...")
     val_transform = create_cotton_leaf_augmentation(strategy='minimal', img_size=img_size)
     
-    # The dataset arguments are taken from the config dictionary.
-    # We pass 'split' and 'transform' explicitly as they are unique to this validation setup.
-    dataset_args = cfg_ssl['data'].copy()
-    dataset_args['random_seed'] = cfg_ssl['seed']
+    # Get the names of the arguments that the SARCLD2024Dataset constructor accepts
+    dataset_constructor_params = inspect.signature(SARCLD2024Dataset.__init__).parameters.keys()
     
+    # Prepare the arguments from the config file
+    dataset_args_from_config = cfg_ssl['data'].copy()
+    dataset_args_from_config['random_seed'] = cfg_ssl['seed']
+    
+    # Filter the config arguments to only include those accepted by the constructor
+    valid_dataset_args = {
+        key: dataset_args_from_config[key] 
+        for key in dataset_args_from_config 
+        if key in dataset_constructor_params
+    }
+
+    # Instantiate the dataset with only the valid arguments
     val_dataset = SARCLD2024Dataset(
         split="val",
         transform=val_transform,
-        **dataset_args
+        **valid_dataset_args
     )
+    
     val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=4, pin_memory=True)
 
     # --- Feature Extraction ---
@@ -122,7 +135,8 @@ def main():
     # --- t-SNE Dimensionality Reduction ---
     print("Running t-SNE... (this may take a moment)")
     # Using PCA for initial reduction is a standard practice for better t-SNE performance and stability
-    pca = PCA(n_components=50, random_state=42) 
+    pca = PCA(n_components=50, random_state=42)
+    # Using modern, stable t-SNE parameters
     tsne = TSNE(n_components=2, perplexity=30, n_iter=1000, random_state=42, init='pca', learning_rate='auto')
     
     features_ssl_tsne = tsne.fit_transform(pca.fit_transform(features_ssl))
@@ -131,7 +145,6 @@ def main():
     # --- Plotting for Publication ---
     print("Generating plot...")
     
-    # Ensure the output directory exists
     OUTPUT_DIR = "phase5_analysis_and_ablation/analysis_results"
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
@@ -141,22 +154,22 @@ def main():
     class_names = val_dataset.get_class_names()
 
     # Plot for From-Scratch model
-    scatter1 = axes[0].scatter(features_scratch_tsne[:, 0], features_scratch_tsne[:, 1], c=labels_scratch, cmap=cmap, alpha=0.7, s=12)
-    axes[0].set_title("Feature Space: HVT-Leaf (From Scratch)", fontsize=20, pad=15)
+    axes[0].scatter(features_scratch_tsne[:, 0], features_scratch_tsne[:, 1], c=labels_scratch, cmap=cmap, alpha=0.7, s=12)
+    axes[0].set_title("Feature Space: HVT-Leaf (Trained from Scratch)", fontsize=20, pad=15)
     axes[0].set_xticks([])
     axes[0].set_yticks([])
 
     # Plot for SSL-Pretrained model
-    scatter2 = axes[1].scatter(features_ssl_tsne[:, 0], features_ssl_tsne[:, 1], c=labels_ssl, cmap=cmap, alpha=0.7, s=12)
+    scatter = axes[1].scatter(features_ssl_tsne[:, 0], features_ssl_tsne[:, 1], c=labels_ssl, cmap=cmap, alpha=0.7, s=12)
     axes[1].set_title("Feature Space: HVT-Leaf (SSL Pre-trained)", fontsize=20, pad=15)
     axes[1].set_xticks([])
     axes[1].set_yticks([])
     
-    # Create a single, shared legend for the entire figure
-    legend_handles, _ = scatter2.legend_elements(num=len(class_names))
+    # Create a single, shared legend for the entire figure for consistency
+    legend_handles, _ = scatter.legend_elements(num=len(class_names))
     fig.legend(legend_handles, class_names, title="Disease Classes", loc="center right", fontsize=14, title_fontsize=16, borderpad=1)
     
-    # Adjust layout to prevent the legend from overlapping with the plots
+    # Adjust layout to prevent the legend from overlapping the plots
     plt.tight_layout(rect=[0, 0, 0.88, 1]) 
     
     save_path = os.path.join(OUTPUT_DIR, "tsne_feature_space_comparison.png")
