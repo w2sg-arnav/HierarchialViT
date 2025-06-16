@@ -1,4 +1,4 @@
-# phase4_finetuning/analyze_results.py
+# phase5_analysis_and_ablation/analyze_best_model.py
 
 import torch
 import yaml
@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from sklearn.metrics import confusion_matrix
 import pandas as pd
+from tqdm import tqdm
 
 # --- Path Setup & Imports ---
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -21,9 +22,9 @@ from phase4_finetuning.utils.augmentations import create_cotton_leaf_augmentatio
 from phase2_model.models.hvt import create_disease_aware_hvt
 
 # --- Configuration ---
-CONFIG_PATH = "phase4_finetuning/config.yaml"
-# Point this to the BEST checkpoint from your finetuning run
-CHECKPOINT_PATH = "/teamspace/studios/this_studio/cvpr25/phase4_finetuning/logs_finetune/HVT-XL_FineTune_Run_100epochs_20250611-201740/checkpoints/best_model.pth" #<-- UPDATE THIS
+# IMPORTANT: Update these paths to point to your BEST run
+CONFIG_PATH = "/teamspace/studios/this_studio/cvpr25/phase5_analysis_and_ablation/temp_configs/03_ablation_no_advanced_augs.yaml"
+CHECKPOINT_PATH = "phase4_finetuning/logs_finetune/03_ablation_no_advanced_augs_20250613-163050/checkpoints/best_model.pth"
 OUTPUT_DIR = os.path.join(_current_dir, "analysis_results")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -31,15 +32,24 @@ def analyze():
     print("======== Starting Analysis of Best Fine-tuned Model ========")
     
     # --- Load Config and Setup ---
+    if not os.path.exists(CONFIG_PATH):
+        raise FileNotFoundError(f"Config file not found at {CONFIG_PATH}")
     with open(CONFIG_PATH, 'r') as f:
         cfg = yaml.safe_load(f)
+        
     device = cfg['device']
     img_size = tuple(cfg['data']['img_size'])
-    class_names = SARCLD2024Dataset(
+    
+    # --- FIX #1: Pass the correct dataset folder names from the config ---
+    # This first call is just to get the class names, so transform can be None.
+    val_dataset_for_names = SARCLD2024Dataset(
         root_dir=cfg['data']['root_dir'], img_size=img_size, split="val", transform=None,
-        train_split_ratio=cfg['data']['train_split_ratio'], original_dataset_name="",
-        augmented_dataset_name="", random_seed=cfg['seed']
-    ).get_class_names()
+        train_split_ratio=cfg['data']['train_split_ratio'],
+        original_dataset_name=cfg['data']['original_dataset_name'], # <-- Use value from config
+        augmented_dataset_name=cfg['data']['augmented_dataset_name'],# <-- Use value from config
+        random_seed=cfg['seed']
+    )
+    class_names = val_dataset_for_names.get_class_names()
     num_classes = len(class_names)
     print(f"Analyzing for {num_classes} classes: {class_names}")
 
@@ -55,38 +65,37 @@ def analyze():
     if not os.path.exists(CHECKPOINT_PATH):
         raise FileNotFoundError(f"Best checkpoint not found at {CHECKPOINT_PATH}")
     print(f"Loading weights from {CHECKPOINT_PATH}...")
-    # The saved state dict is from the full model, which is the HVT backbone in this case
-    # If your EnhancedFinetuner saved model.state_dict(), it should be the HVT model's state dict.
     ckpt = torch.load(CHECKPOINT_PATH, map_location='cpu')
     
-    # Check if the checkpoint contains the full model state or a wrapped state
-    if 'model_state_dict' in ckpt: # From EnhancedFinetuner save
+    if 'model_state_dict' in ckpt:
         model.load_state_dict(ckpt['model_state_dict'])
-    else: # Direct save of state_dict
+    else:
         model.load_state_dict(ckpt)
         
     model.to(device)
     model.eval()
 
-    # --- Create Validation Dataloader (NO augmentations) ---
+    # --- Create Validation Dataloader with minimal augmentations ---
     val_augs = create_cotton_leaf_augmentation(strategy='minimal', img_size=img_size)
+    
+    # --- FIX #2: Pass the correct dataset folder names here as well ---
     val_dataset = SARCLD2024Dataset(
         root_dir=cfg['data']['root_dir'], split="val", transform=val_augs,
-        img_size=img_size, train_split_ratio=cfg['data']['train_split_ratio'],
-        original_dataset_name=cfg['data']['original_dataset_name'],
-        augmented_dataset_name=cfg['data']['augmented_dataset_name'],
+        img_size=img_size,
+        train_split_ratio=cfg['data']['train_split_ratio'],
+        original_dataset_name=cfg['data']['original_dataset_name'], # <-- Use value from config
+        augmented_dataset_name=cfg['data']['augmented_dataset_name'],# <-- Use value from config
         random_seed=cfg['seed']
     )
-    val_loader = DataLoader(val_dataset, batch_size=cfg['training']['batch_size']*2, shuffle=False)
+    val_loader = DataLoader(val_dataset, batch_size=cfg['training']['batch_size']*2, shuffle=False, num_workers=4)
 
     # --- Run Inference ---
     all_preds, all_labels = [], []
     with torch.no_grad():
         for images, labels in tqdm(val_loader, desc="Running validation inference"):
+            if -1 in labels: continue # Skip error samples
             images = images.to(device)
-            # Use the model's classify mode
-            outputs = model(rgb_img=images, mode='classify')
-            # Handle tuple output if consistency heads were enabled during training
+            outputs = model(images) # Your fine-tuned model's forward should return logits
             main_logits = outputs[0] if isinstance(outputs, tuple) else outputs
             
             preds = torch.argmax(main_logits, dim=1)
@@ -101,16 +110,16 @@ def analyze():
     cm_df = pd.DataFrame(cm, index=class_names, columns=class_names)
     
     plt.figure(figsize=(12, 10))
-    sns.heatmap(cm_df, annot=True, fmt='d', cmap='Blues')
-    plt.title('Confusion Matrix for Best Fine-tuned Model')
-    plt.ylabel('Actual Label')
+    sns.heatmap(cm_df, annot=True, fmt='d', cmap='Blues', cbar=False)
+    plt.title('Confusion Matrix for HVT-Leaf (Best Model)')
+    plt.ylabel('True Label')
     plt.xlabel('Predicted Label')
     plt.xticks(rotation=45, ha='right')
     plt.yticks(rotation=0)
     plt.tight_layout()
     
     save_path = os.path.join(OUTPUT_DIR, "confusion_matrix.png")
-    plt.savefig(save_path)
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"Confusion matrix saved to {save_path}")
     plt.show()
 
