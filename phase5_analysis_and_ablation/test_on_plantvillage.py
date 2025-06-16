@@ -1,4 +1,4 @@
-# phase5_analysis_and_ablation/test_on_plantvillage.py (STREAMLINED - HVT-Leaf Only)
+# phase5_analysis_and_ablation/test_on_plantvillage.py (Corrected Weight Loading)
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -46,11 +46,17 @@ def run_finetuning(model, model_name, train_loader, val_loader, num_classes):
             print(f"torch.compile failed: {e}. Continuing without compilation.")
 
     # Adapt the model's head for the new number of classes
-    if hasattr(model, '_orig_mod'): # If compiled
-        model._orig_mod.classifier_head = nn.Linear(model._orig_mod.classifier_head.in_features, num_classes)
-    else: # If not compiled
-        model.classifier_head = nn.Linear(model.classifier_head.in_features, num_classes)
-
+    # This must be done BEFORE creating the optimizer
+    is_compiled = hasattr(model, '_orig_mod')
+    unwrapped_model = model._orig_mod if is_compiled else model
+    
+    if hasattr(unwrapped_model, 'head'): # Timm ViT
+        in_features = unwrapped_model.head.in_features
+        unwrapped_model.head = nn.Linear(in_features, num_classes)
+    elif hasattr(unwrapped_model, 'classifier_head'): # Our HVT
+        in_features = unwrapped_model.classifier_head.in_features
+        unwrapped_model.classifier_head = nn.Linear(in_features, num_classes)
+        
     model.to(DEVICE)
     
     optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-3)
@@ -109,24 +115,42 @@ def main():
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, **loader_args)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE * 2, shuffle=False, **loader_args)
 
-    # --- START OF CHANGE: Hardcode ViT result and remove its training loop ---
-    # From your previous log, the first epoch result is a strong baseline.
-    vit_acc = 97.89 
-    print(f"Using cached baseline result for ViT-Base: {vit_acc:.2f}% accuracy.")
-    # The training loop for ViT-Base has been removed.
-    # --- END OF CHANGE ---
+    # --- Experiment 1: ViT-Base Baseline ---
+    # We re-create the model here to ensure it's fresh for its run
+    vit_model = timm.create_model('vit_base_patch16_224.augreg_in21k_ft_in1k', pretrained=True)
+    vit_acc = run_finetuning(vit_model, "ViT-Base", train_loader, val_loader, num_classes)
     
-    # --- Experiment: Our HVT-Leaf with SSL ---
+    # --- Experiment 2: Our HVT-Leaf with SSL ---
+    # We must initialize the model for the NEW dataset (num_classes, img_size) FIRST
     hvt_model = create_disease_aware_hvt(current_img_size=IMG_SIZE, num_classes=num_classes, model_params_dict=HVT_CONFIG)
+    
+    # --- START OF FIX: Surgical Weight Loading ---
     print("Loading SSL weights into HVT-Leaf...")
-    ckpt = torch.load(HVT_LEAF_SSL_CHECKPOINT, map_location='cpu')
-    hvt_model.load_state_dict(ckpt['model_backbone_state_dict'], strict=False)
+    checkpoint = torch.load(HVT_LEAF_SSL_CHECKPOINT, map_location='cpu')
+    ssl_weights = checkpoint['model_backbone_state_dict']
+    
+    # Get the state dict of the newly initialized HVT model
+    new_model_state_dict = hvt_model.state_dict()
+    
+    # Create a new state dict to load, filtering out mismatched keys
+    weights_to_load = {}
+    for name, param in ssl_weights.items():
+        if name in new_model_state_dict and param.size() == new_model_state_dict[name].size():
+            weights_to_load[name] = param
+        else:
+            print(f"Skipping weight: {name} due to size mismatch.") # This will now show the skipped keys
+            
+    # Load the filtered weights
+    hvt_model.load_state_dict(weights_to_load, strict=False)
+    print("SSL backbone weights loaded successfully.")
+    # --- END OF FIX ---
+    
     hvt_acc = run_finetuning(hvt_model, "HVT-Leaf (SSL)", train_loader, val_loader, num_classes)
 
     # --- Final Results ---
     print("\n" + "="*40)
-    print("--- PlantVillage Generalization Results ---")
-    print(f"ViT-Base (ImageNet Pre-trained) Baseline Accuracy: {vit_acc:.2f}%")
+    print("--- PlantVillage Generalization Results (20 Epochs) ---")
+    print(f"ViT-Base (ImageNet Pre-trained) Final Accuracy: {vit_acc:.2f}%")
     print(f"HVT-Leaf (Our SSL Pre-trained) Final Accuracy: {hvt_acc:.2f}%")
     print("="*40)
     
@@ -134,7 +158,6 @@ def main():
         print("\nConclusion: HVT-Leaf with domain-specific SSL generalizes better than ViT-Base with ImageNet pre-training on this task.")
     else:
         print("\nConclusion: ViT-Base with ImageNet pre-training performs strongly on this dataset, setting a high bar for generalization.")
-
 
 if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
