@@ -1,0 +1,79 @@
+# Pre-training configuration for self-supervised learning
+
+model:
+  name: "hvit_xl"
+  img_size: 224
+  patch_size: 16
+  in_chans: 3
+  embed_dims: [96, 192, 384, 768]
+  num_heads: [3, 6, 12, 24]
+  mlp_ratios: [4, 4, 4, 4]
+  depths: [2, 2, 18, 2]
+  sr_ratios: [8, 4, 2, 1]
+  drop_rate: 0.0
+  drop_path_rate: 0.2
+  use_checkpoint: true
+
+ssl_strategy:
+  type: "masked_image_modeling"
+  mask_ratio: 0.75
+  mask_patch_size: 16
+  decoder_depth: 8
+  decoder_embed_dim: 512
+  decoder_num_heads: 16
+
+training:
+  epochs: 800
+  batch_size: 2048
+  accumulation_steps: 2
+  
+  optimizer:
+    name: "adamw"
+    lr: 1.5e-3
+    weight_decay: 0.05
+    beta1: 0.9
+    beta2: 0.999
+    layer_decay: 0.65
+  
+  scheduler:
+    name: "cosine"
+    warmup_epochs: 40
+    min_lr: 1.0e-5
+    warmup_start_lr: 1.0e-6
+
+  augmentation:
+    global_crops:
+      size: 224
+      scale: [0.4, 1.0]
+      num: 2
+    local_crops:
+      size: 96
+      scale: [0.05, 0.4]
+      num: 8
+    color_jitter_strength: 0.4
+    gaussian_blur: true
+    solarization: 0.2
+
+validation:
+  batch_size: 64
+  frequency: 5
+  save_best: true
+  reconstruction_metrics:
+    - mse
+    - psnr
+    - ssim
+
+logging:
+  tensorboard: true
+  wandb:
+    enabled: true
+    project: "hierarchialvit"
+    group: "pretrain_xl"
+  save_frequency: 10
+  log_frequency: 50
+
+distributed:
+  enabled: true
+  backend: "nccl"
+  world_size: 8
+  find_unused_parameters: true

@@ -1,0 +1,73 @@
+# Fine-tuning configuration for downstream tasks
+
+model:
+  name: "hvit_xl"
+  pretrained: "checkpoints/pretrained_hvit_xl.pth"
+  img_size: 224
+  patch_size: 16
+  in_chans: 3
+  num_classes: 1000  # adjust based on task
+  embed_dims: [96, 192, 384, 768]
+  num_heads: [3, 6, 12, 24]
+  mlp_ratios: [4, 4, 4, 4]
+  depths: [2, 2, 18, 2]
+  sr_ratios: [8, 4, 2, 1]
+  drop_rate: 0.1
+  drop_path_rate: 0.2
+  use_checkpoint: false
+
+training:
+  epochs: 100
+  batch_size: 64
+  
+  optimizer:
+    name: "adamw"
+    lr: 5.0e-4
+    weight_decay: 0.05
+    beta1: 0.9
+    beta2: 0.999
+    layer_decay: 0.65  # layer-wise learning rate decay
+  
+  scheduler:
+    name: "cosine"
+    warmup_epochs: 5
+    min_lr: 1.0e-6
+    warmup_start_lr: 1.0e-7
+
+  augmentation:
+    rand_augment:
+      num_ops: 2
+      magnitude: 9
+    mixup: 0.8
+    cutmix: 1.0
+    label_smoothing: 0.1
+    random_erase: 0.25
+
+validation:
+  batch_size: 64
+  frequency: 1
+  save_best: true
+  early_stopping:
+    enabled: true
+    patience: 10
+    min_delta: 0.001
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+
+logging:
+  tensorboard: true
+  wandb:
+    enabled: true
+    project: "hierarchialvit"
+    group: "finetune_xl"
+  save_frequency: 5
+  log_frequency: 50
+
+distributed:
+  enabled: true
+  backend: "nccl"
+  world_size: 8
+  find_unused_parameters: false

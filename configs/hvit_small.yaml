@@ -1,0 +1,67 @@
+# Base configuration for HViT-Small model
+
+model:
+  name: "hvit_s"
+  img_size: 224
+  patch_size: 16
+  in_chans: 3
+  num_classes: 1000
+  embed_dims: [64, 128, 256, 512]
+  num_heads: [1, 2, 4, 8]
+  mlp_ratios: [4, 4, 4, 4]
+  depths: [3, 4, 6, 3]
+  sr_ratios: [8, 4, 2, 1]
+  drop_rate: 0.0
+  drop_path_rate: 0.1
+  use_checkpoint: false
+
+training:
+  epochs: 300
+  batch_size: 128
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-3
+    weight_decay: 0.05
+    beta1: 0.9
+    beta2: 0.999
+  
+  scheduler:
+    name: "cosine"
+    warmup_epochs: 20
+    min_lr: 1.0e-5
+    warmup_start_lr: 1.0e-6
+
+  augmentation:
+    rand_augment:
+      num_ops: 2
+      magnitude: 9
+    mixup: 0.8
+    cutmix: 1.0
+    label_smoothing: 0.1
+    color_jitter: 0.4
+    auto_augment: true
+
+validation:
+  batch_size: 64
+  frequency: 1  # validate every N epochs
+  save_best: true
+  metrics:
+    - accuracy
+    - precision
+    - recall
+    - f1
+
+logging:
+  tensorboard: true
+  wandb:
+    enabled: true
+    project: "hierarchialvit"
+    group: "hvit_s"
+  save_frequency: 10
+  log_frequency: 100  # log every N steps
+
+distributed:
+  enabled: true
+  backend: "nccl"
+  world_size: 8
+  find_unused_parameters: false

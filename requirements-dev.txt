@@ -1,0 +1,16 @@
+-r requirements.txt
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=3.0.0
+
+# Linting and formatting
+black>=22.3.0
+flake8>=4.0.1
+isort>=5.10.1
+mypy>=0.950
+
+# Type stubs
+types-PyYAML
+types-setuptools
+types-requests

@@ -1,0 +1,40 @@
+# Example configuration file for HierarchialViT
+
+# Model Configuration
+model:
+  name: "hvt_xl"  # Model variant (base, large, xl)
+  patch_size: 16  # Size of image patches
+  embed_dim: 768  # Initial embedding dimension
+  depth: [2, 2, 6, 2]  # Number of transformer blocks per stage
+  num_heads: [3, 6, 12, 24]  # Number of attention heads per stage
+  mlp_ratio: 4  # MLP expansion ratio
+  drop_path: 0.1  # Stochastic depth rate
+
+# Training Configuration
+training:
+  batch_size: 64
+  epochs: 100
+  optimizer:
+    name: "adamw"
+    lr: 1e-4
+    weight_decay: 0.05
+  scheduler:
+    name: "cosine"
+    warmup_epochs: 5
+
+# Data Configuration
+data:
+  train_path: "path/to/train/data"
+  val_path: "path/to/val/data"
+  input_size: 224
+  augmentation:
+    random_crop: true
+    random_flip: true
+    color_jitter: 0.4
+    auto_augment: true
+
+# Logging Configuration
+logging:
+  log_dir: "logs/"
+  save_freq: 10
+  eval_freq: 5

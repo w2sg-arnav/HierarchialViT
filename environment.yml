@@ -1,0 +1,21 @@
+name: hvit
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch>=2.0.0
+  - torchvision
+  - numpy
+  - pillow
+  - pyyaml
+  - tensorboard
+  - matplotlib
+  - scikit-learn
+  - pandas
+  - tqdm
+  - pip
+  - pip:
+    - wandb
+    - timm
