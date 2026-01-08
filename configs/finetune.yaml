@@ -1,73 +1,67 @@
-# Fine-tuning configuration for downstream tasks
+# Fine-tuning configuration for HViT on SAR-CLD-2024
+# Cotton leaf disease classification
+
+data:
+  root_dir: "/path/to/sarcld2024"
+  img_size: [256, 256]
+  num_classes: 7
+  num_workers: 4
 
 model:
-  name: "hvit_xl"
-  pretrained: "checkpoints/pretrained_hvit_xl.pth"
-  img_size: 224
+  ssl_pretrained_path: null  # Path to SSL checkpoint, set via --ssl-checkpoint
   patch_size: 16
-  in_chans: 3
-  num_classes: 1000  # adjust based on task
-  embed_dims: [96, 192, 384, 768]
+  embed_dim_rgb: 96
+  embed_dim_spectral: 96
+  spectral_channels: 0
+  depths: [2, 2, 6, 2]
   num_heads: [3, 6, 12, 24]
-  mlp_ratios: [4, 4, 4, 4]
-  depths: [2, 2, 18, 2]
-  sr_ratios: [8, 4, 2, 1]
-  drop_rate: 0.1
+  mlp_ratio: 4.0
+  qkv_bias: true
+  model_drop_rate: 0.1
+  attn_drop_rate: 0.0
   drop_path_rate: 0.2
-  use_checkpoint: false
+  norm_layer_name: "LayerNorm"
+  use_dfca: true
+  use_gradient_checkpointing: false
+  ssl_enable_mae: false
+  ssl_enable_contrastive: false
+  enable_consistency_loss_heads: false
 
 training:
   epochs: 100
-  batch_size: 64
+  batch_size: 32
+  val_batch_size: 64
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  warmup_epochs: 5
+  gradient_accumulation_steps: 2
   
-  optimizer:
-    name: "adamw"
-    lr: 5.0e-4
-    weight_decay: 0.05
-    beta1: 0.9
-    beta2: 0.999
-    layer_decay: 0.65  # layer-wise learning rate decay
-  
-  scheduler:
-    name: "cosine"
-    warmup_epochs: 5
-    min_lr: 1.0e-6
-    warmup_start_lr: 1.0e-7
+  # Advanced training features
+  use_ema: true
+  ema_decay: 0.9999
+  use_tta: true
+  use_mixup: true
+  mixup_alpha: 0.8
+  use_cutmix: true
+  cutmix_alpha: 1.0
 
-  augmentation:
-    rand_augment:
-      num_ops: 2
-      magnitude: 9
-    mixup: 0.8
-    cutmix: 1.0
-    label_smoothing: 0.1
-    random_erase: 0.25
+  # Loss configuration
+  loss_type: "combined"  # focal, cross_entropy, or combined
+  focal_gamma: 2.0
+  label_smoothing: 0.1
+
+augmentations:
+  severity: "moderate"  # light, moderate, aggressive
 
 validation:
-  batch_size: 64
   frequency: 1
   save_best: true
   early_stopping:
     enabled: true
-    patience: 10
+    patience: 15
     min_delta: 0.001
-  metrics:
-    - accuracy
-    - precision
-    - recall
-    - f1
 
 logging:
   tensorboard: true
-  wandb:
-    enabled: true
-    project: "hierarchialvit"
-    group: "finetune_xl"
+  log_dir: "outputs/finetune/logs"
   save_frequency: 5
-  log_frequency: 50
-
-distributed:
-  enabled: true
-  backend: "nccl"
-  world_size: 8
-  find_unused_parameters: false

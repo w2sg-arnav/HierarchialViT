@@ -22,12 +22,12 @@ class TestDatasetStructure:
 
     def test_dataset_import(self):
         """Test that dataset classes can be imported."""
-        from phase4_finetuning.dataset import SARCLD2024Dataset
+        from hvit.data import SARCLD2024Dataset
         assert SARCLD2024Dataset is not None
 
     def test_dataset_has_required_methods(self):
         """Test that dataset has required interface methods."""
-        from phase4_finetuning.dataset import SARCLD2024Dataset
+        from hvit.data import SARCLD2024Dataset
         
         assert hasattr(SARCLD2024Dataset, '__len__')
         assert hasattr(SARCLD2024Dataset, '__getitem__')
@@ -40,17 +40,16 @@ class TestDatasetClasses:
 
     def test_expected_class_names(self):
         """Test that expected class names are defined."""
-        from phase4_finetuning.dataset import SARCLD2024Dataset
+        from hvit.data import SARCLD_CLASSES
         
-        # Mock initialization to get class names
         expected_classes = [
             "Bacterial Blight", "Curl Virus", "Healthy Leaf",
             "Herbicide Growth Damage", "Leaf Hopper Jassids",
             "Leaf Redding", "Leaf Variegation"
         ]
         
-        # Check class attribute exists in class definition
-        assert len(expected_classes) == 7
+        assert len(SARCLD_CLASSES) == 7
+        assert set(SARCLD_CLASSES) == set(expected_classes)
 
 
 class TestDataLoaderIntegration:

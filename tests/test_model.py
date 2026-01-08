@@ -12,7 +12,7 @@ import os
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from phase2_model.models.hvt import create_disease_aware_hvt, DiseaseAwareHVT
+from hvit.models import create_disease_aware_hvt, DiseaseAwareHVT
 
 
 @pytest.fixture
