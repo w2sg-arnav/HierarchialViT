@@ -1,5 +1,14 @@
 # Phase 1: Initial Project Setup and Baseline Implementation
 
+> ⚠️ **LEGACY CODE**: This phase contains the initial baseline implementation and is no longer part
+> of the active research workflow. The main HierarchicalViT implementation has moved to:
+> - **phase2_model/** - Core HVT architecture
+> - **phase3_pretraining/** - SimCLR self-supervised pretraining  
+> - **phase4_finetuning/** - Fine-tuning pipeline with advanced augmentations
+> - **phase5_analysis_and_ablation/** - Evaluation and ablation studies
+>
+> This folder is retained for reference and reproducibility of baseline experiments.
+
 This phase contains the foundational implementation of the HierarchialViT project.
 
 ## Directory Structure

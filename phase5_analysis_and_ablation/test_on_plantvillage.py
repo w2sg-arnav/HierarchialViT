@@ -7,7 +7,7 @@ import sys
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from tqdm import tqdm
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.optim.lr_scheduler import OneCycleLR
 
 # --- Path Setup ---
@@ -71,7 +71,7 @@ def run_finetuning(model, model_name, train_loader, val_loader, num_classes):
         model.train()
         for images, labels in tqdm(train_loader, desc=f"Epoch {epoch}/{EPOCHS} [Train]"):
             images, labels = images.to(DEVICE, non_blocking=True), labels.to(DEVICE, non_blocking=True)
-            with autocast():
+            with autocast(device_type='cuda'):
                 outputs = model(images)
                 loss = criterion(outputs, labels)
             optimizer.zero_grad(set_to_none=True)
@@ -85,7 +85,7 @@ def run_finetuning(model, model_name, train_loader, val_loader, num_classes):
         with torch.no_grad():
             for images, labels in tqdm(val_loader, desc=f"Epoch {epoch} [Val]"):
                 images, labels = images.to(DEVICE, non_blocking=True), labels.to(DEVICE, non_blocking=True)
-                with autocast():
+                with autocast(device_type='cuda'):
                     outputs = model(images)
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)

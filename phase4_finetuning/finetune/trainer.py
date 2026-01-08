@@ -2,11 +2,10 @@
 
 import torch
 import torch.nn as nn
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import OneCycleLR, ConstantLR
 from torch.utils.data import DataLoader
-import numpy as np
 import logging
 import os
 from tqdm import tqdm
@@ -120,15 +119,15 @@ class EnhancedFinetuner:
             images, labels = images.to(self.device), labels.to(self.device)
             is_mixed = False
             
-            if np.random.rand() < mixup_alpha:
+            if torch.rand(1).item() < mixup_alpha:
                 images, labels_a, labels_b, lam = self._mixup_data(images, labels, alpha=mixup_alpha)
                 is_mixed = True
-            elif np.random.rand() < cutmix_prob:
+            elif torch.rand(1).item() < cutmix_prob:
                 images, labels_a, labels_b, lam = self._cutmix_data(images, labels)
                 is_mixed = True
 
             # Use a generic forward call, as all models (custom or timm) will return logits
-            with autocast(enabled=amp_enabled):
+            with autocast(device_type='cuda', enabled=amp_enabled):
                 outputs = self.model(images)
                 
                 if is_mixed:
@@ -166,7 +165,7 @@ class EnhancedFinetuner:
         with torch.no_grad():
             for images, labels in pbar:
                 images, labels = images.to(self.device), labels.to(self.device)
-                with autocast(enabled=self.cfg['training']['amp_enabled']):
+                with autocast(device_type='cuda', enabled=self.cfg['training']['amp_enabled']):
                     if self.cfg['evaluation']['tta_enabled']:
                         outputs = self._tta_inference(model_to_eval, images)
                     else:
@@ -195,15 +194,20 @@ class EnhancedFinetuner:
         return (torch.softmax(original_logits, dim=1) + torch.softmax(flipped_logits, dim=1)) / 2.0
 
     def _mixup_data(self, x: torch.Tensor, y: torch.Tensor, alpha: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
-        lam = np.random.beta(alpha, alpha) if alpha > 0 else 1.0
+        if alpha > 0:
+            beta_dist = torch.distributions.Beta(alpha, alpha)
+            lam = beta_dist.sample().item()
+        else:
+            lam = 1.0
         batch_size = x.size(0)
-        index = torch.randperm(batch_size).to(self.device)
+        index = torch.randperm(batch_size, device=self.device)
         mixed_x = lam * x + (1 - lam) * x[index, :]
         return mixed_x, y, y[index], lam
 
     def _cutmix_data(self, x: torch.Tensor, y: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
-        lam = np.random.beta(1.0, 1.0)
-        rand_index = torch.randperm(x.size(0)).to(self.device)
+        beta_dist = torch.distributions.Beta(1.0, 1.0)
+        lam = beta_dist.sample().item()
+        rand_index = torch.randperm(x.size(0), device=self.device)
         bbx1, bby1, bbx2, bby2 = self._rand_bbox(x.size(), lam)
         x_clone = x.clone()
         x_clone[:, :, bby1:bby2, bbx1:bbx2] = x[rand_index, :, bby1:bby2, bbx1:bbx2]
@@ -212,11 +216,14 @@ class EnhancedFinetuner:
 
     def _rand_bbox(self, size: Tuple[int, ...], lam: float) -> Tuple[int, int, int, int]:
         W, H = size[3], size[2]
-        cut_rat = np.sqrt(1. - lam)
+        cut_rat = (1.0 - lam) ** 0.5  # Equivalent to np.sqrt(1. - lam)
         cut_w, cut_h = int(W * cut_rat), int(H * cut_rat)
-        cx, cy = np.random.randint(W), np.random.randint(H)
-        bbx1 = np.clip(cx - cut_w // 2, 0, W); bby1 = np.clip(cy - cut_h // 2, 0, H)
-        bbx2 = np.clip(cx + cut_w // 2, 0, W); bby2 = np.clip(cy + cut_h // 2, 0, H)
+        cx = torch.randint(0, W, (1,)).item()
+        cy = torch.randint(0, H, (1,)).item()
+        bbx1 = max(0, min(cx - cut_w // 2, W))
+        bby1 = max(0, min(cy - cut_h // 2, H))
+        bbx2 = max(0, min(cx + cut_w // 2, W))
+        bby2 = max(0, min(cy + cut_h // 2, H))
         return bbx1, bby1, bbx2, bby2
         
     def _load_initial_weights(self, model: nn.Module) -> nn.Module:

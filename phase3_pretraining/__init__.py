@@ -1,2 +1,10 @@
 # phase3_pretraining/__init__.py
-# This file makes 'phase3_pretraining' a Python package.
+"""Phase 3: Self-Supervised Pre-training module.
+
+This package contains the SimCLR pre-training pipeline for the HierarchicalViT model.
+"""
+
+__all__ = [
+    "config",
+    "dataset",
+]

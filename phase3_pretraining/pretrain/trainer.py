@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.optim import AdamW, SGD
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from torch.utils.data import DataLoader
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 import logging
 import sys
 from tqdm import tqdm
@@ -128,7 +128,7 @@ class Pretrainer:
             view1, view2 = self.augmentations(rgb_images)
 
             loss_value_iter = 0.0
-            with autocast(enabled=self.scaler.is_enabled()):
+            with autocast(device_type='cuda', enabled=self.scaler.is_enabled()):
                 try:
                     projected1 = self.model(rgb_img=view1, mode='pretrain')
                     projected2 = self.model(rgb_img=view2, mode='pretrain')

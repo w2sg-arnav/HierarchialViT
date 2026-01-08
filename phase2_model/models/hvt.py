@@ -11,27 +11,84 @@ from .dfca import DiseaseFocusedCrossAttention
 
 logger = logging.getLogger(__name__)
 
-# --- Helper Modules (DropPath, PatchEmbed, Attention, Mlp, TransformerBlock, PatchMerging) ---
+# --- Constants ---
+INIT_STD = 0.02  # Standard deviation for weight initialization (following ViT convention)
+
+
+# --- Helper Modules ---
 # These are standard building blocks for ViT-like architectures.
-def drop_path(x, drop_prob: float = 0., training: bool = False):
-    if drop_prob == 0. or not training: return x
+
+def drop_path(
+    x: torch.Tensor,
+    drop_prob: float = 0.0,
+    training: bool = False
+) -> torch.Tensor:
+    """Drop paths (Stochastic Depth) per sample.
+    
+    Args:
+        x: Input tensor of shape (B, ...).
+        drop_prob: Probability of dropping a path.
+        training: Whether the model is in training mode.
+    
+    Returns:
+        Tensor with dropped paths during training.
+    """
+    if drop_prob == 0.0 or not training:
+        return x
     keep_prob = 1 - drop_prob
-    shape = (x.shape[0],) + (1,) * (x.ndim - 1) # work with diff dim tensors, not just 2D ConvNets
+    shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors
     random_tensor = keep_prob + torch.rand(shape, dtype=x.dtype, device=x.device)
-    random_tensor.floor_() # binarize
+    random_tensor.floor_()  # binarize
     return x.div(keep_prob) * random_tensor
 
+
 class DropPath(nn.Module):
-    def __init__(self, drop_prob=None): super().__init__(); self.drop_prob = drop_prob
-    def forward(self, x): return drop_path(x, self.drop_prob, self.training)
+    """Drop paths (Stochastic Depth) per sample.
+    
+    Args:
+        drop_prob: Probability of dropping a path. Default: None (0.0).
+    """
+    
+    def __init__(self, drop_prob: Optional[float] = None) -> None:
+        super().__init__()
+        self.drop_prob = drop_prob or 0.0
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return drop_path(x, self.drop_prob, self.training)
+    
+    def extra_repr(self) -> str:
+        return f'drop_prob={self.drop_prob}'
 
 class PatchEmbed(nn.Module):
-    def __init__(self, img_size: Tuple[int, int] = (224, 224), patch_size: int = 16,
-                 in_chans: int = 3, embed_dim: int = 96, norm_layer: Optional[nn.Module] = None):
+    """Image to Patch Embedding.
+    
+    Divides an image into patches and projects them to an embedding dimension.
+    
+    Args:
+        img_size: Input image size as (H, W). Default: (224, 224).
+        patch_size: Size of each patch. Default: 16.
+        in_chans: Number of input channels. Default: 3.
+        embed_dim: Embedding dimension. Default: 96.
+        norm_layer: Normalization layer. Default: None.
+    """
+    
+    def __init__(
+        self,
+        img_size: Tuple[int, int] = (224, 224),
+        patch_size: int = 16,
+        in_chans: int = 3,
+        embed_dim: int = 96,
+        norm_layer: Optional[nn.Module] = None
+    ) -> None:
         super().__init__()
-        self.img_size = img_size; self.patch_size = patch_size
+        self.img_size = img_size
+        self.patch_size = patch_size
+        
         if img_size[0] % patch_size != 0 or img_size[1] % patch_size != 0:
-            logger.warning(f"PatchEmbed: Img dims {img_size} not perfectly divisible by patch_size {patch_size}.")
+            logger.warning(
+                f"PatchEmbed: Img dims {img_size} not perfectly divisible by patch_size {patch_size}."
+            )
+        
         self.grid_size = (img_size[0] // patch_size, img_size[1] // patch_size)
         self.num_patches = self.grid_size[0] * self.grid_size[1]
         self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
@@ -241,7 +298,7 @@ class DiseaseAwareHVT(nn.Module):
         # or ensure the first img_size passed to __init__ is that canonical size.
         # Here, we use num_patches_at_current_res, implying it adapts if HVT is re-instantiated.
         self.rgb_pos_embed = nn.Parameter(torch.zeros(1, num_patches_at_current_res, embed_dim_rgb))
-        nn.init.trunc_normal_(self.rgb_pos_embed, std=.02)
+        nn.init.trunc_normal_(self.rgb_pos_embed, std=INIT_STD)
         self.pos_drop_rgb = nn.Dropout(p=model_drop_rate)
 
         self.rgb_stages = nn.ModuleList()
@@ -270,7 +327,7 @@ class DiseaseAwareHVT(nn.Module):
                                                    norm_layer=self.norm_layer)
             num_patches_spectral = self.spectral_patch_embed.num_patches
             self.spectral_pos_embed = nn.Parameter(torch.zeros(1, num_patches_spectral, embed_dim_spectral))
-            nn.init.trunc_normal_(self.spectral_pos_embed, std=.02)
+            nn.init.trunc_normal_(self.spectral_pos_embed, std=INIT_STD)
             self.pos_drop_spectral = nn.Dropout(p=model_drop_rate)
 
             self.spectral_stages = nn.ModuleList()
@@ -359,12 +416,23 @@ class DiseaseAwareHVT(nn.Module):
         logger.info(f"DiseaseAwareHVT initialized for image size {self.current_img_size} and {self.num_classes} classes.")
 
 
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear): nn.init.trunc_normal_(m.weight, std=.02)
-        if isinstance(m, nn.Linear) and m.bias is not None: nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm): nn.init.constant_(m.bias, 0); nn.init.constant_(m.weight, 1.0)
-        elif isinstance(m, nn.Conv2d): nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-        if isinstance(m, nn.Conv2d) and m.bias is not None: nn.init.constant_(m.bias, 0)
+    def _init_weights(self, m: nn.Module) -> None:
+        """Initialize weights following ViT conventions.
+        
+        Args:
+            m: Module to initialize.
+        """
+        if isinstance(m, nn.Linear):
+            nn.init.trunc_normal_(m.weight, std=INIT_STD)
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+        elif isinstance(m, nn.Conv2d):
+            nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            if m.bias is not None:
+                nn.init.constant_(m.bias, 0)
 
     def _interpolate_pos_embed(self, pos_embed_param: nn.Parameter,
                                current_patch_grid_H: int, current_patch_grid_W: int) -> torch.Tensor:
